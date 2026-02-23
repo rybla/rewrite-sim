@@ -4,6 +4,8 @@ import Prelude
 
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.State (class MonadState, StateT, gets, modify_, runStateT)
+import Data.Identity (Identity)
+import Data.Newtype (unwrap)
 import Data.Tuple.Nested (type (/\), (/\))
 
 subReaderT :: forall ctx ctx' m a. MonadReader ctx m => (ctx -> ctx') -> ReaderT ctx' m a -> m a
@@ -20,3 +22,6 @@ subStateT f g m = do
 
 ignore :: forall a b. a -> b -> b
 ignore _ b = b
+
+runIdentity :: forall a. Identity a -> a
+runIdentity = unwrap

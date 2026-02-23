@@ -2,10 +2,12 @@ module Main where
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (runReader, runReaderT)
 import Control.Monad.State (get, modify_, runStateT)
+import Control.Monad.Writer (runWriterT)
 import Data.Array as Array
-import Data.Foldable (fold)
+import Data.Foldable (fold, length)
 import Data.List (List)
 import Data.List as List
 import Data.Map (Map)
@@ -16,6 +18,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
+import Halogen (HalogenM)
 import Halogen as H
 import Halogen.Aff as HA
 import Halogen.HTML (PlainHTML)
@@ -24,8 +27,11 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver as HVD
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim ((%))
+import Record as Record
+import RewriteSim (normalize, (%))
 import RewriteSim as RS
+import Type.Proxy (Proxy(..))
+import Utilities (runIdentity)
 
 ----------------
 -- main
@@ -41,14 +47,21 @@ main = HA.runHalogenAff (HVD.runUI appComponent {} =<< HA.awaitBody)
 type Expr = RS.Expr String
 type Rule = RS.Rule String
 type System = RS.System String
+type GlobalUpdate = RS.GlobalUpdate String
 
-type AppState =
-  { expr :: Expr
-  , system :: System
-  , history :: List Expr
-  , messages :: List PlainHTML
+type AppState = Record AppStateR
+type AppStateR =
+  ( system :: System
+  , history :: List SimEvent
+  , now :: SimEvent
+  , future :: List SimEvent
   , mb_highlightPath :: Maybe RS.Path
-  }
+  , messages :: List PlainHTML
+  )
+
+data SimEvent
+  = StaticExpr Expr
+  | UpdateExpr GlobalUpdate
 
 data AppAction
   = StepForwardExpr
@@ -65,98 +78,48 @@ appComponent = H.mkComponent { initialState, eval, render }
     let
       system = exampleSystems Array.!! 0 # fromMaybe' (\_ -> unsafeCrashWith "empty exampleSystems")
     in
-      { system
-      , expr: getDefaultExprForSystemName system.name
-      , history: none
-      , messages: none
-      , mb_highlightPath: none
-      }
+      { messages: none }
+        # setSystem system
 
   eval = H.mkEval H.defaultEval
-    { handleAction = case _ of
-        StepForwardExpr -> do
-          { expr, system } <- get
-          mb_result /\ _ <- RS.simplify expr
-            # flip runReaderT (RS.newSimplificationCtx { system } {})
-            # flip runStateT (RS.newSimplificationEnv {} {})
-          case mb_result of
-            Nothing -> do
-              modify_ \state -> state
-                { messages = List.Cons
-                    ( HH.span_
-                        [ HH.text "❌ StepForwardExpr: idempotent" ]
-                    )
-                    state.messages
-                }
-            Just (_ /\ expr') -> do
-              modify_ \state -> state
-                { messages = List.Cons
-                    ( HH.span_
-                        [ HH.text "✅ StepForwardExpr: updated" ]
-                    )
-                    state.messages
-                , expr = expr'
-                , history = List.Cons expr state.history
-                }
-          pure unit
-        StepBackwardExpr -> do
-          { history } <- get
-          case history of
-            List.Nil -> do
-              modify_ \state -> state
-                { messages =
-                    List.Cons
-                      (HH.span_ [ HH.text "❌ StepBackwardExpr: empty history" ])
-                      state.messages
-                }
-            List.Cons expr history' -> do
-              modify_ \state -> state
-                { messages =
-                    List.Cons
-                      (HH.span_ [ HH.text "✅ StepBackwardExpr: updated" ])
-                      state.messages
-                , history = history'
-                , expr = expr
-                }
-          pure unit
-        SetExpr expr -> do
-          modify_ \state -> state
-            { messages = List.Cons
-                ( HH.span_ $
-                    Array.intercalate [ HH.text " " ]
-                      [ [ HH.text "SetExpr" ]
-                      , [ RS.renderExpr expr
-                            # flip runReader
-                                ( RS.newRenderExprCtx
-                                    { mb_highlightPath: none
-                                    , renderA: HH.text
-                                    }
-                                )
-                        ]
-                      ]
-                )
-                state.messages
-            , history = none
-            , expr = expr
-            }
-          pure unit
-        SetSystem system -> do
-          modify_ \state -> state
-            { messages = List.Cons
-                ( HH.span_ $
-                    Array.intercalate [ HH.text " " ]
-                      [ [ HH.text "SetSystem" ]
-                      , [ HH.text system.name ]
-                      ]
-                )
-                state.messages
-            , system = system
-            , expr = getDefaultExprForSystemName system.name
-            }
-          pure unit
-        ClearConsole -> modify_ _ { messages = none }
-
+    { handleAction = handleAction
     }
+
+  handleAction :: forall slots. AppAction -> HalogenM AppState AppAction slots output m Unit
+  handleAction = case _ of
+    StepForwardExpr -> do
+      { future } <- get
+      case future of
+        List.Nil -> do
+          modify_ $ addMessage [ HH.text "❌ StepForward: empty future" ]
+        List.Cons event future' -> do
+          modify_ $ addMessage [ HH.text "✅ StepBackwardExpr: updated" ]
+          modify_ \state -> state
+            { history = List.Cons state.now state.history
+            , now = event
+            , future = future'
+            }
+      pure unit
+    StepBackwardExpr -> do
+      { history } <- get
+      case history of
+        List.Nil -> do
+          modify_ $ addMessage [ HH.text "❌ StepBackwardExpr: empty history" ]
+        List.Cons update history' -> do
+          modify_ $ addMessage [ HH.text "✅ StepBackwardExpr: updated" ]
+          modify_ \state -> state
+            { history = history'
+            , now = update
+            , future = List.Cons state.now state.future
+            }
+      pure unit
+    SetExpr expr -> do
+      modify_ $ setExpr expr
+      pure unit
+    SetSystem system -> do
+      modify_ $ setSystem system
+      pure unit
+    ClearConsole -> modify_ _ { messages = none }
 
   render state =
     HH.div [ HP.classes [ HH.ClassName "app" ] ]
@@ -183,12 +146,25 @@ appComponent = H.mkComponent { initialState, eval, render }
           , HH.button [ HE.onClick $ const $ StepForwardExpr ] [ HH.text "Forward" ]
           ]
       -- 
+      , HH.div [ HP.classes [ HH.ClassName "info" ] ]
+          [ HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
+              [ HH.text $ "total steps: " <> show @Int (length state.history + length state.future) ]
+          ]
+      -- 
       , HH.div [ HP.classes [ HH.ClassName "view" ] ]
-          [ RS.renderExpr state.expr
-              # flip runReader
-                  { renderA: HH.text
-                  , mb_highlightPath: state.mb_highlightPath
-                  }
+          [ case state.now of
+              StaticExpr expr ->
+                RS.renderExpr expr
+                  # flip runReader
+                      { renderA: HH.text
+                      , mb_highlightPath: state.mb_highlightPath
+                      }
+              UpdateExpr update ->
+                RS.renderExpr update.new
+                  # flip runReader
+                      { renderA: HH.text
+                      , mb_highlightPath: state.mb_highlightPath
+                      }
           ]
       -- 
       , HH.div [ HP.classes [ HH.ClassName "console" ] ]
@@ -203,6 +179,66 @@ appComponent = H.mkComponent { initialState, eval, render }
                   [ message # HH.fromPlainHTML ]
           ]
       ]
+
+addMessage :: Array PlainHTML -> AppState -> AppState
+addMessage contents state = state { messages = state.messages # List.Cons (HH.span_ contents) }
+
+setSystem
+  :: forall r
+   . System
+  -> { messages :: List PlainHTML
+     | r
+     }
+  -> AppState
+setSystem system state =
+  { messages: state.messages # List.Cons (HH.span_ [ HH.text $ "SetSystem " <> system.name ]) }
+    # Record.insert (Proxy @"system") system
+    # setExpr (getDefaultExprForSystemName system.name)
+
+type PreAppState r = Record (PreAppStateR r)
+type PreAppStateR r =
+  ( system :: System
+  , messages :: List PlainHTML
+  | r
+  )
+
+setExpr
+  :: forall r
+   . Expr
+  -> PreAppState r
+  -> AppState
+setExpr expr state =
+  let
+    (_ /\ _env') /\ trace = normalize expr
+      # flip runReaderT (RS.newNormalizationCtx { system: state.system } {})
+      # runExceptT
+      # flip runStateT (RS.newNormalizationEnv { gas: 100 } {})
+      # runWriterT
+      # runIdentity
+  in
+    { system: state.system
+    , history: none
+    , now: case Array.uncons trace of
+        Just { head: update } -> StaticExpr update.old
+        _ -> StaticExpr expr
+    , future: trace # map UpdateExpr # List.fromFoldable
+    , mb_highlightPath: none
+    , messages: List.Cons
+        ( HH.span_ $
+            Array.intercalate [ HH.text " " ]
+              [ [ HH.text "SetExpr" ]
+              , [ RS.renderExpr expr
+                    # flip runReader
+                        ( RS.newRenderExprCtx
+                            { mb_highlightPath: none
+                            , renderA: HH.text
+                            }
+                        )
+                ]
+              ]
+        )
+        state.messages
+    }
 
 getDefaultExprForSystemName :: String -> Expr
 getDefaultExprForSystemName systemName = exampleExprs

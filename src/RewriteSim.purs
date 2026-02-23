@@ -3,8 +3,9 @@ module RewriteSim where
 import Prelude
 
 import Control.Alternative (guard)
+import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState)
+import Control.Monad.State (class MonadState, get, modify_)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Eq.Generic (genericEq)
@@ -17,7 +18,7 @@ import Data.Show.Generic (genericShow)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
-import Halogen.HTML (HTML)
+import Halogen.HTML (HTML, PlainHTML)
 import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
@@ -115,6 +116,7 @@ newSimplificationCtx { system } = Record.union
   , path: none
   }
 
+type SimplificationEnv :: Row Type -> Type -> Type
 type SimplificationEnv env a =
   {
   | env
@@ -185,14 +187,20 @@ newNormalizationCtx { system } = Record.union
   { system
   }
 
+type NormalizationEnv :: Row Type -> Type -> Type
 type NormalizationEnv env a =
-  {
+  { gas :: Int
   | env
   }
 
-newNormalizationEnv :: forall env a. {} -> Record env -> NormalizationEnv env a
-newNormalizationEnv {} = Record.union
-  {}
+newNormalizationEnv
+  :: forall env a
+   . { gas :: Int
+     }
+  -> Record env
+  -> NormalizationEnv env a
+newNormalizationEnv { gas } = Record.union
+  { gas }
 
 type NormalizationTrace a = Array (GlobalUpdate a)
 
@@ -201,9 +209,15 @@ normalize
    . MonadReader (NormalizationCtx ctx a) m
   => MonadState (NormalizationEnv env a) m
   => MonadWriter (NormalizationTrace a) m
+  => MonadThrow PlainHTML m
   => Expr a
   -> m (Expr a)
 normalize e = do
+  { gas } <- get
+  if 0 < gas then
+    modify_ \state -> state { gas = state.gas - 1 }
+  else
+    throwError $ HH.text "out of gas"
   mb_e' /\ _env' <- simplify e
     # subReaderT (\ctx -> newSimplificationCtx { system: ctx.system } ctx)
     # subStateT (newSimplificationEnv {}) ignore

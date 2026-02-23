@@ -55,6 +55,15 @@ body {
     gap: 0.5em;
 }
 
+/* info */
+
+.app .info {
+    padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
 /* console */
 
 .app .console {
