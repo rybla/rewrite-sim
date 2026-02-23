@@ -95,7 +95,15 @@ body {
     display: inline-flex;
     flex-direction: row;
     align-items: center;
+
+    padding: 0.2em;
+    border: 1px solid black;
+
+    &.highlight {
+        border: 1px solid red;
+    }
 }
+
 
 /* .expr.branch::before {
     content: "(";
@@ -105,10 +113,8 @@ body {
     content: ")";
 } */
 
-.expr {
-    padding: 0.2em;
-    border: 1px solid black;
-}
+
+
 
 .expr-label {
     color: blue;

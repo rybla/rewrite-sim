@@ -106,14 +106,14 @@ type Path = List Int
 
 type SimplificationCtx ctx a =
   { system :: System a
-  , path :: Path
+  , revPath :: Path
   | ctx
   }
 
 newSimplificationCtx :: forall ctx a. { system :: System a } -> Record ctx -> SimplificationCtx ctx a
 newSimplificationCtx { system } = Record.union
   { system
-  , path: none
+  , revPath: none
   }
 
 type SimplificationEnv :: Row Type -> Type -> Type
@@ -145,13 +145,13 @@ simplifyHere
   => Expr a
   -> m (Maybe (LocalUpdate a))
 simplifyHere e = do
-  { system, path } <- ask
+  { system, revPath } <- ask
   let
     go i = case Array.index system.rules i of
       Nothing -> pure Nothing
       Just r -> case r e of
         Nothing -> go (i + 1)
-        Just e' -> pure $ Just { path, old: e, new: e' }
+        Just e' -> pure $ Just { path: List.reverse revPath, old: e, new: e' }
   go 0
 
 simplify

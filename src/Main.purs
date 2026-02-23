@@ -55,7 +55,6 @@ type AppStateR =
   , history :: List SimEvent
   , now :: SimEvent
   , future :: List SimEvent
-  , mb_highlightPath :: Maybe RS.Path
   , messages :: List PlainHTML
   )
 
@@ -157,13 +156,13 @@ appComponent = H.mkComponent { initialState, eval, render }
                 RS.renderExpr expr
                   # flip runReader
                       { renderA: HH.text
-                      , mb_highlightPath: state.mb_highlightPath
+                      , mb_highlightPath: none
                       }
               UpdateExpr update ->
                 RS.renderExpr update.new
                   # flip runReader
                       { renderA: HH.text
-                      , mb_highlightPath: state.mb_highlightPath
+                      , mb_highlightPath: Just update.update.path
                       }
           ]
       -- 
@@ -222,7 +221,6 @@ setExpr expr state =
         Just { head: update } -> StaticExpr update.old
         _ -> StaticExpr expr
     , future: trace # map UpdateExpr # List.fromFoldable
-    , mb_highlightPath: none
     , messages: List.Cons
         ( HH.span_ $
             Array.intercalate [ HH.text " " ]
