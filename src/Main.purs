@@ -41,6 +41,13 @@ main :: Effect Unit
 main = HA.runHalogenAff (HVD.runUI appComponent {} =<< HA.awaitBody)
 
 ----------------
+-- constants
+----------------
+
+initialGas :: Int
+initialGas = 100
+
+----------------
 -- appComponent
 ----------------
 
@@ -155,6 +162,8 @@ appComponent = H.mkComponent { initialState, eval, render }
       -- 
       , HH.div [ HP.classes [ HH.ClassName "info" ] ]
           [ HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
+              [ HH.text $ "initial gas: " <> show initialGas ]
+          , HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
               [ HH.text $ "total steps: " <> show @Int (length state.history + length state.future) ]
           , HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
               [ HH.text $ "focus: " <> if state.focusNew then "new" else "old" ]
@@ -221,7 +230,7 @@ setExpr expr state =
     (_ /\ _env') /\ trace = normalize expr
       # flip runReaderT (RS.newNormalizationCtx { system: state.system } {})
       # runExceptT
-      # flip runStateT (RS.newNormalizationEnv { gas: 100 } {})
+      # flip runStateT (RS.newNormalizationEnv { gas: initialGas } {})
       # runWriterT
       # runIdentity
   in
