@@ -1,15 +1,10 @@
 {
   "name": "rewrite-sim",
-  "module": "index.ts",
   "type": "module",
-  "scripts": {
-    "build": "spago build",
-    "bundle": "spago bundle --module Main --outfile ./dist/main.js",
-    "serve": "bun --hot run index.ts"
-  },
   "devDependencies": {
     "@types/bun": "latest",
-    "gh-pages": "^6.3.0"
+    "gh-pages": "^6.3.0",
+    "http-server": "^14.1.1"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

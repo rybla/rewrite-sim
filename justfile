@@ -1,8 +1,11 @@
 build:
-    bun run build
+  bun spago build
 
 bundle: build
-    bun run bundle
+  bun spago bundle --module Main --outfile ./dist/main.js
 
 serve: bundle
-     http-server dist
+  bun http-server dist
+
+deploy: bundle
+  bun gh-pages --dist dist --nojekyll
