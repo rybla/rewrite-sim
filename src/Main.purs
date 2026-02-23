@@ -10,7 +10,7 @@ import Data.List (List)
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, fromMaybe')
+import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
@@ -197,41 +197,52 @@ getDefaultExprForSystemName systemName = exampleExprs
   # fromMaybe' (\_ -> unsafeCrashWith "empty exampleExprs")
   # snd
 
-exampleExprs :: Map String (Array (String /\ Expr))
-exampleExprs = Map.fromFoldable
+examples
+  :: Array
+       ( String /\
+           { rules :: Array Rule
+           , exprs :: Array (String /\ Expr)
+           }
+       )
+examples =
   [ Tuple "LC"
-      [ Tuple "ex1" $
-          "app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ]
-      ]
-  , Tuple "ABC"
-      [ Tuple "ex1" $
-          "A" % []
-      ]
+      { rules:
+          [ case _ of
+              "app" % [ "lam" % [ x % [], b ], a ] -> pure $ subst x a b
+              _ -> Nothing
+          ]
+      , exprs:
+          [ Tuple "ex1" $
+              "app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ]
+          ]
+      }
+  , Tuple "ACB"
+      { rules:
+          [ case _ of
+              "A" % [] -> Just $ "B" % []
+              _ -> Nothing
+          , case _ of
+              "B" % [] -> Just $ "C" % []
+              _ -> Nothing
+          , case _ of
+              "C" % [] -> Just $ "A" % []
+              _ -> Nothing
+          ]
+      , exprs:
+          [ Tuple "ex1" $
+              "A" % []
+          ]
+      }
   ]
 
+exampleExprs :: Map String (Array (String /\ Expr))
+exampleExprs = examples
+  # map (\(systemName /\ x) -> (systemName /\ x.exprs))
+  # Map.fromFoldable
+
 exampleSystems :: Array System
-exampleSystems =
-  [ { name: "LC"
-    , rules:
-        [ case _ of
-            "app" % [ "lam" % [ x % [], b ], a ] -> pure $ subst x a b
-            _ -> Nothing
-        ]
-    }
-  , { name: "ABC"
-    , rules:
-        [ case _ of
-            "A" % [] -> Just $ "B" % []
-            _ -> Nothing
-        , case _ of
-            "B" % [] -> Just $ "C" % []
-            _ -> Nothing
-        , case _ of
-            "C" % [] -> Just $ "A" % []
-            _ -> Nothing
-        ]
-    }
-  ]
+exampleSystems = examples
+  # map (\(systemName /\ x) -> { name: systemName, rules: x.rules })
 
 subst :: String -> Expr -> Expr -> Expr
 subst x a ("var" % [ y % [] ]) | x == y = a
