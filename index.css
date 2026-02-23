@@ -1,0 +1,131 @@
+/* all */
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* app */
+
+.app {
+    display: flex;
+    flex-direction: column;
+}
+
+/* title */
+
+.title {
+    padding: 1rem;
+    font-size: 2em;
+}
+
+/* menu */
+
+.menu {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.menu-section-title {
+    font-weight: bold;
+}
+
+.menu-section-items {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+/* controls */
+
+.app .controls {
+    padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+/* info */
+
+.app .info {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+}
+
+.info-item {}
+
+/* console */
+
+.app .console {
+    padding: 0.5em;
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+    overflow-y: auto;
+}
+
+.console-menu {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.console-message {}
+
+
+/* view */
+
+.app .view {
+    padding: 1rem;
+}
+
+/* expr */
+
+.expr {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+
+    padding: 0.2em;
+    border: 1px solid black;
+
+    &.highlight {
+        border: 1px solid red;
+    }
+}
+
+/* .expr.branch::before {
+    content: "(";
+}
+
+.expr.branch::after {
+    content: ")";
+} */
+
+.expr-label {
+    color: blue;
+}
+
+.expr-kids {
+    margin-left: 0.5em;
+
+    display: inline-flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.leaf>.expr-kids {
+    display: none;
+}
