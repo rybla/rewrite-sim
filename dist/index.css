@@ -15,21 +15,44 @@ body {
 
 /* title */
 
-.app .title {
+.title {
     padding: 1rem;
     font-size: 2em;
 }
 
 /* menu */
 
-.app .menu {
+.menu {
     padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+}
+
+.menu-section {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.menu-section-title {
+    font-weight: bold;
+}
+
+.menu-section-items {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5em;
 }
 
 /* controls */
 
 .app .controls {
     padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
 }
 
 /* console */
@@ -42,7 +65,14 @@ body {
     overflow-y: auto;
 }
 
-.console>.console-message {}
+.console-menu {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.console-message {}
+
 
 /* view */
 

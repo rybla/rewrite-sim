@@ -5,10 +5,13 @@ import Prelude
 import Control.Monad.Reader (runReaderT)
 import Control.Monad.State (get, modify_)
 import Data.Array as Array
+import Data.Foldable (fold)
 import Data.List (List)
 import Data.List as List
-import Data.Maybe (Maybe(..), fromMaybe')
-import Data.Tuple (snd)
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Maybe (Maybe(..), fromMaybe, fromMaybe')
+import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
 import Effect (Effect)
@@ -51,17 +54,21 @@ data AppAction
   | StepBackwardExpr
   | SetExpr Expr
   | SetSystem System
+  | ClearConsole
 
 appComponent :: forall query input output m. MonadAff m => H.Component query input output m
 appComponent = H.mkComponent { initialState, eval, render }
   where
   initialState :: input -> AppState
   initialState _ =
-    { expr: exampleExprs Array.!! 0 # fromMaybe' (\_ -> unsafeCrashWith "empty exampleExprs") # snd
-    , system: exampleSystems Array.!! 0 # fromMaybe' (\_ -> unsafeCrashWith "empty exampleSystems")
-    , history: none
-    , messages: none
-    }
+    let
+      system = exampleSystems Array.!! 0 # fromMaybe' (\_ -> unsafeCrashWith "empty exampleSystems")
+    in
+      { system
+      , expr: getDefaultExprForSystemName system.name
+      , history: none
+      , messages: none
+      }
 
   eval = H.mkEval H.defaultEval
     { handleAction = case _ of
@@ -133,8 +140,12 @@ appComponent = H.mkComponent { initialState, eval, render }
                       ]
                 )
                 state.messages
+            , system = system
+            , expr = getDefaultExprForSystemName system.name
             }
           pure unit
+        ClearConsole -> modify_ _ { messages = none }
+
     }
 
   render state =
@@ -151,8 +162,8 @@ appComponent = H.mkComponent { initialState, eval, render }
               ]
           , HH.div [ HP.classes [ HH.ClassName "menu-section" ] ]
               [ HH.div [ HP.classes [ HH.ClassName "menu-section-title" ] ]
-                  [ HH.text "Example Expressions" ]
-              , HH.div [ HP.classes [ HH.ClassName "menu-section-items" ] ] $ exampleExprs # map \(label /\ expr) ->
+                  [ HH.text "Expressions" ]
+              , HH.div [ HP.classes [ HH.ClassName "menu-section-items" ] ] $ exampleExprs # Map.lookup state.system.name # fold # map \(label /\ expr) ->
                   HH.button [ HE.onClick $ const $ SetExpr expr ] [ HH.text label ]
               ]
           ]
@@ -168,6 +179,9 @@ appComponent = H.mkComponent { initialState, eval, render }
       , HH.div [ HP.classes [ HH.ClassName "console" ] ]
           [ HH.div [ HP.classes [ HH.ClassName "console-title" ] ]
               [ HH.text "Console" ]
+          , HH.div [ HP.classes [ HH.ClassName "console-menu" ] ]
+              [ HH.button [ HE.onClick $ const ClearConsole ] [ HH.text "Clear" ]
+              ]
           , HH.div [ HP.classes [ HH.ClassName "console-items" ] ] $
               state.messages # Array.fromFoldable # map \message ->
                 HH.div [ HP.classes [ HH.ClassName "console-message" ] ]
@@ -175,9 +189,24 @@ appComponent = H.mkComponent { initialState, eval, render }
           ]
       ]
 
-exampleExprs :: Array (String /\ Expr)
-exampleExprs =
-  [ "ex1" /\ ("app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ])
+getDefaultExprForSystemName :: String -> Expr
+getDefaultExprForSystemName systemName = exampleExprs
+  # Map.lookup systemName
+  # fold
+  # flip Array.index 0
+  # fromMaybe' (\_ -> unsafeCrashWith "empty exampleExprs")
+  # snd
+
+exampleExprs :: Map String (Array (String /\ Expr))
+exampleExprs = Map.fromFoldable
+  [ Tuple "LC"
+      [ Tuple "ex1" $
+          "app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ]
+      ]
+  , Tuple "ABC"
+      [ Tuple "ex1" $
+          "A" % []
+      ]
   ]
 
 exampleSystems :: Array System
@@ -186,6 +215,19 @@ exampleSystems =
     , rules:
         [ case _ of
             "app" % [ "lam" % [ x % [], b ], a ] -> pure $ subst x a b
+            _ -> Nothing
+        ]
+    }
+  , { name: "ABC"
+    , rules:
+        [ case _ of
+            "A" % [] -> Just $ "B" % []
+            _ -> Nothing
+        , case _ of
+            "B" % [] -> Just $ "C" % []
+            _ -> Nothing
+        , case _ of
+            "C" % [] -> Just $ "A" % []
             _ -> Nothing
         ]
     }
