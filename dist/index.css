@@ -1,0 +1,88 @@
+/* all */
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* app */
+
+.app {
+    display: flex;
+    flex-direction: column;
+}
+
+/* title */
+
+.app .title {
+    padding: 1rem;
+    font-size: 2em;
+}
+
+/* menu */
+
+.app .menu {
+    padding: 1rem;
+}
+
+/* controls */
+
+.app .controls {
+    padding: 1rem;
+}
+
+/* console */
+
+.app .console {
+    padding: 0.5em;
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+    overflow-y: auto;
+}
+
+.console>.console-message {}
+
+/* view */
+
+.app .view {
+    padding: 1rem;
+}
+
+/* expr */
+
+.expr {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+/* .expr.branch::before {
+    content: "(";
+}
+
+.expr.branch::after {
+    content: ")";
+} */
+
+.expr {
+    padding: 0.2em;
+    border: 1px solid black;
+}
+
+.expr-label {
+    color: blue;
+}
+
+.expr-kids {
+    margin-left: 0.5em;
+
+    display: inline-flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.leaf>.expr-kids {
+    display: none;
+}
