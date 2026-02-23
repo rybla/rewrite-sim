@@ -3,7 +3,7 @@ module Main where
 import Prelude
 
 import Control.Monad.Reader (runReaderT)
-import Control.Monad.State (get, modify_)
+import Control.Monad.State (get, modify_, runStateT)
 import Data.Array as Array
 import Data.Foldable (fold)
 import Data.List (List)
@@ -74,8 +74,9 @@ appComponent = H.mkComponent { initialState, eval, render }
     { handleAction = case _ of
         StepForwardExpr -> do
           { expr, system } <- get
-          mb_expr' <- RS.step expr
-            # flip runReaderT { system }
+          mb_expr' /\ _ <- RS.simplify expr
+            # flip runReaderT (RS.newSimplificationCtx { system } {})
+            # flip runStateT (RS.newSimplificationEnv {} {})
           case mb_expr' of
             Nothing -> do
               modify_ \state -> state

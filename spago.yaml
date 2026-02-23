@@ -9,6 +9,7 @@ package:
     - lists
     - maybe
     - prelude
+    - record
     - transformers
   test:
     main: Test.Main
