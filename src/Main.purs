@@ -56,6 +56,7 @@ type AppStateR =
   , now :: SimEvent
   , future :: List SimEvent
   , messages :: List PlainHTML
+  , focusNew :: Boolean
   )
 
 data SimEvent
@@ -65,6 +66,7 @@ data SimEvent
 data AppAction
   = StepForwardExpr
   | StepBackwardExpr
+  | ToggleFocus
   | SetExpr Expr
   | SetSystem System
   | ClearConsole
@@ -112,6 +114,11 @@ appComponent = H.mkComponent { initialState, eval, render }
             , future = List.Cons state.now state.future
             }
       pure unit
+    ToggleFocus -> do
+      modify_ \state ->
+        state
+          { focusNew = not state.focusNew }
+          # addMessage [ HH.text $ "toggled focus to " <> if state.focusNew then "old" else "new" ]
     SetExpr expr -> do
       modify_ $ setExpr expr
       pure unit
@@ -143,11 +150,14 @@ appComponent = H.mkComponent { initialState, eval, render }
       , HH.div [ HP.classes [ HH.ClassName "controls" ] ]
           [ HH.button [ HE.onClick $ const $ StepBackwardExpr ] [ HH.text "Backward" ]
           , HH.button [ HE.onClick $ const $ StepForwardExpr ] [ HH.text "Forward" ]
+          , HH.button [ HE.onClick $ const $ ToggleFocus ] [ HH.text "Toggle Focus" ]
           ]
       -- 
       , HH.div [ HP.classes [ HH.ClassName "info" ] ]
           [ HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
               [ HH.text $ "total steps: " <> show @Int (length state.history + length state.future) ]
+          , HH.div [ HP.classes [ HH.ClassName "info-item" ] ]
+              [ HH.text $ "focus: " <> if state.focusNew then "new" else "old" ]
           ]
       -- 
       , HH.div [ HP.classes [ HH.ClassName "view" ] ]
@@ -159,7 +169,7 @@ appComponent = H.mkComponent { initialState, eval, render }
                       , mb_highlightPath: none
                       }
               UpdateExpr update ->
-                RS.renderExpr update.new
+                RS.renderExpr (if state.focusNew then update.new else update.old)
                   # flip runReader
                       { renderA: HH.text
                       , mb_highlightPath: Just update.update.path
@@ -236,6 +246,7 @@ setExpr expr state =
               ]
         )
         state.messages
+    , focusNew: true
     }
 
 getDefaultExprForSystemName :: String -> Expr

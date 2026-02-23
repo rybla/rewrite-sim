@@ -60,9 +60,11 @@ body {
 .app .info {
     padding: 1rem;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     gap: 0.5em;
 }
+
+.info-item {}
 
 /* console */
 
@@ -104,7 +106,6 @@ body {
     }
 }
 
-
 /* .expr.branch::before {
     content: "(";
 }
@@ -112,9 +113,6 @@ body {
 .expr.branch::after {
     content: ")";
 } */
-
-
-
 
 .expr-label {
     color: blue;
