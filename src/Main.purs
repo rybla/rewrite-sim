@@ -2,6 +2,7 @@ module Main where
 
 import Prelude
 
+import Example.Common (Expr, GlobalUpdate, System)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (runReader, runReaderT)
 import Control.Monad.State (get, modify_, runStateT)
@@ -10,14 +11,14 @@ import Data.Array as Array
 import Data.Foldable (fold, length)
 import Data.List (List)
 import Data.List as List
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe')
-import Data.Tuple (Tuple(..), snd)
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Tuple (snd)
+import Data.Tuple.Nested ((/\))
 import Data.Unfoldable (none)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
+import Examples (exampleExprs, exampleSystems)
 import Halogen (HalogenM)
 import Halogen as H
 import Halogen.Aff as HA
@@ -28,7 +29,7 @@ import Halogen.HTML.Properties as HP
 import Halogen.VDom.Driver as HVD
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
-import RewriteSim (normalize, (%))
+import RewriteSim (normalize)
 import RewriteSim as RS
 import Type.Proxy (Proxy(..))
 import Utilities (runIdentity)
@@ -50,11 +51,6 @@ initialGas = 100
 ----------------
 -- appComponent
 ----------------
-
-type Expr = RS.Expr String
-type Rule = RS.Rule String
-type System = RS.System String
-type GlobalUpdate = RS.GlobalUpdate String
 
 type AppState = Record AppStateR
 type AppStateR =
@@ -265,54 +261,3 @@ getDefaultExprForSystemName systemName = exampleExprs
   # flip Array.index 0
   # fromMaybe' (\_ -> unsafeCrashWith "empty exampleExprs")
   # snd
-
-examples
-  :: Array
-       ( String /\
-           { rules :: Array Rule
-           , exprs :: Array (String /\ Expr)
-           }
-       )
-examples =
-  [ Tuple "LC"
-      { rules:
-          [ case _ of
-              "app" % [ "lam" % [ x % [], b ], a ] -> pure $ subst x a b
-              _ -> Nothing
-          ]
-      , exprs:
-          [ Tuple "ex1" $
-              "app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ]
-          ]
-      }
-  , Tuple "ACB"
-      { rules:
-          [ case _ of
-              "A" % [] -> Just $ "B" % []
-              _ -> Nothing
-          , case _ of
-              "B" % [] -> Just $ "C" % []
-              _ -> Nothing
-          , case _ of
-              "C" % [] -> Just $ "A" % []
-              _ -> Nothing
-          ]
-      , exprs:
-          [ Tuple "ex1" $
-              "A" % []
-          ]
-      }
-  ]
-
-exampleExprs :: Map String (Array (String /\ Expr))
-exampleExprs = examples
-  # map (\(systemName /\ x) -> (systemName /\ x.exprs))
-  # Map.fromFoldable
-
-exampleSystems :: Array System
-exampleSystems = examples
-  # map (\(systemName /\ x) -> { name: systemName, rules: x.rules })
-
-subst :: String -> Expr -> Expr -> Expr
-subst x a ("var" % [ y % [] ]) | x == y = a
-subst x a (l % es) = l % (es # map (subst x a))
