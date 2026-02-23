@@ -2,21 +2,27 @@ module RewriteSim where
 
 import Prelude
 
-import Control.Monad.Reader (class MonadReader, ask)
+import Control.Alternative (guard)
+import Control.Monad.Reader (class MonadReader, ask, local)
 import Control.Monad.State (class MonadState)
+import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Eq.Generic (genericEq)
-import Data.Foldable (null)
+import Data.Foldable (fold, null)
 import Data.Generic.Rep (class Generic)
 import Data.List (List)
+import Data.List as List
 import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Show.Generic (genericShow)
+import Data.TraversableWithIndex (traverseWithIndex)
+import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
 import Halogen.HTML (HTML)
 import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
+import Utilities (ignore, subReaderT, subStateT)
 
 ----------------
 -- expressions
@@ -34,12 +40,51 @@ instance Eq a => Eq (Expr a) where
 instance Show a => Show (Expr a) where
   show x = genericShow x
 
-renderExpr :: forall w i a. (a -> HTML w i) -> Expr a -> HTML w i
-renderExpr renderA (Expr a es) =
-  HH.div [ HP.classes [ HH.ClassName "expr", HH.ClassName if null es then "leaf" else "branch" ] ]
-    [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ renderA a ]
-    , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] $ map (renderExpr renderA) $ es
-    ]
+type RenderExprCtx a w i =
+  { renderA :: a -> HTML w i
+  , mb_highlightPath :: Maybe Path
+  }
+
+newRenderExprCtx
+  :: forall a w i
+   . { renderA :: a -> HTML w i
+     , mb_highlightPath :: Maybe Path
+     }
+  -> RenderExprCtx a w i
+newRenderExprCtx { renderA, mb_highlightPath } =
+  { renderA
+  , mb_highlightPath
+  }
+
+renderExpr :: forall m w i a. MonadReader (RenderExprCtx a w i) m => Expr a -> m (HTML w i)
+renderExpr (Expr a es) = do
+  { renderA, mb_highlightPath } <- ask
+  let r_a = a # renderA
+  r_es <- es # traverseWithIndex \i e ->
+    local
+      ( \ctx -> ctx
+          { mb_highlightPath = do
+              { head: i', tail: highlightPath' } <- List.uncons =<< ctx.mb_highlightPath
+              guard $ i == i'
+              pure highlightPath'
+          }
+      )
+      do
+        renderExpr e
+  pure $
+    HH.div
+      [ HP.classes $ fold
+          [ [ HH.ClassName "expr"
+            , HH.ClassName if null es then "leaf" else "branch"
+            ]
+          , case mb_highlightPath of
+              Just List.Nil -> [ HH.ClassName "highlight" ]
+              _ -> []
+          ]
+      ]
+      [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_a ]
+      , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
+      ]
 
 ----------------
 -- rewrite systems
@@ -52,11 +97,11 @@ type System a =
   , rules :: Array (Rule a)
   }
 
-----------------
--- rewrite engine
-----------------
-
 type Path = List Int
+
+----------------
+-- simplification
+----------------
 
 type SimplificationCtx ctx a =
   { system :: System a
@@ -71,16 +116,22 @@ newSimplificationCtx { system } = Record.union
   }
 
 type SimplificationEnv env a =
-  { update :: Maybe (Update a)
+  {
   | env
   }
 
 newSimplificationEnv :: forall env a. {} -> Record env -> SimplificationEnv env a
 newSimplificationEnv {} = Record.union
-  { update: Nothing }
+  {}
 
-type Update a =
+type LocalUpdate a =
   { path :: Path
+  , old :: Expr a
+  , new :: Expr a
+  }
+
+type GlobalUpdate a =
+  { update :: LocalUpdate a
   , old :: Expr a
   , new :: Expr a
   }
@@ -90,15 +141,15 @@ simplifyHere
    . MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
   => Expr a
-  -> m (Maybe (Expr a))
+  -> m (Maybe (LocalUpdate a))
 simplifyHere e = do
-  { system } <- ask
+  { system, path } <- ask
   let
     go i = case Array.index system.rules i of
       Nothing -> pure Nothing
       Just r -> case r e of
         Nothing -> go (i + 1)
-        Just e' -> pure $ Just e'
+        Just e' -> pure $ Just { path, old: e, new: e' }
   go 0
 
 simplify
@@ -106,14 +157,58 @@ simplify
    . MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
   => Expr a
-  -> m (Maybe (Expr a))
+  -> m (Maybe (LocalUpdate a /\ Expr a))
 simplify e0@(Expr a es) = do
   let
     go i = case Array.index es i of
-      Nothing -> simplifyHere e0
+      Nothing -> simplifyHere e0 >>= case _ of
+        Nothing -> pure Nothing
+        Just update -> pure $ Just $ update /\ update.new
       Just e -> simplify e >>= case _ of
         Nothing -> go (i + 1)
-        Just e' -> do
+        Just (update /\ e') -> do
           let es' = es # Array.updateAt i e' # fromMaybe' \_ -> unsafeCrashWith "impossible"
-          pure $ Just $ Expr a es'
+          pure $ Just $ update /\ Expr a es'
   go 0
+
+----------------
+-- normalization
+----------------
+
+type NormalizationCtx ctx a =
+  { system :: System a
+  | ctx
+  }
+
+newNormalizationCtx :: forall ctx a. { system :: System a } -> Record ctx -> NormalizationCtx ctx a
+newNormalizationCtx { system } = Record.union
+  { system
+  }
+
+type NormalizationEnv env a =
+  {
+  | env
+  }
+
+newNormalizationEnv :: forall env a. {} -> Record env -> NormalizationEnv env a
+newNormalizationEnv {} = Record.union
+  {}
+
+type NormalizationTrace a = Array (GlobalUpdate a)
+
+normalize
+  :: forall m ctx env a
+   . MonadReader (NormalizationCtx ctx a) m
+  => MonadState (NormalizationEnv env a) m
+  => MonadWriter (NormalizationTrace a) m
+  => Expr a
+  -> m (Expr a)
+normalize e = do
+  mb_e' /\ _env' <- simplify e
+    # subReaderT (\ctx -> newSimplificationCtx { system: ctx.system } ctx)
+    # subStateT (newSimplificationEnv {}) ignore
+  case mb_e' of
+    Nothing -> pure $ e
+    Just (update /\ e') -> do
+      tell [ { update, old: e, new: e' } ]
+      normalize e'

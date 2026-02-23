@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 
-import Control.Monad.Reader (runReaderT)
+import Control.Monad.Reader (runReader, runReaderT)
 import Control.Monad.State (get, modify_, runStateT)
 import Data.Array as Array
 import Data.Foldable (fold)
@@ -47,6 +47,7 @@ type AppState =
   , system :: System
   , history :: List Expr
   , messages :: List PlainHTML
+  , mb_highlightPath :: Maybe RS.Path
   }
 
 data AppAction
@@ -68,16 +69,17 @@ appComponent = H.mkComponent { initialState, eval, render }
       , expr: getDefaultExprForSystemName system.name
       , history: none
       , messages: none
+      , mb_highlightPath: none
       }
 
   eval = H.mkEval H.defaultEval
     { handleAction = case _ of
         StepForwardExpr -> do
           { expr, system } <- get
-          mb_expr' /\ _ <- RS.simplify expr
+          mb_result /\ _ <- RS.simplify expr
             # flip runReaderT (RS.newSimplificationCtx { system } {})
             # flip runStateT (RS.newSimplificationEnv {} {})
-          case mb_expr' of
+          case mb_result of
             Nothing -> do
               modify_ \state -> state
                 { messages = List.Cons
@@ -86,7 +88,7 @@ appComponent = H.mkComponent { initialState, eval, render }
                     )
                     state.messages
                 }
-            Just expr' -> do
+            Just (_ /\ expr') -> do
               modify_ \state -> state
                 { messages = List.Cons
                     ( HH.span_
@@ -123,7 +125,14 @@ appComponent = H.mkComponent { initialState, eval, render }
                 ( HH.span_ $
                     Array.intercalate [ HH.text " " ]
                       [ [ HH.text "SetExpr" ]
-                      , [ RS.renderExpr HH.text expr ]
+                      , [ RS.renderExpr expr
+                            # flip runReader
+                                ( RS.newRenderExprCtx
+                                    { mb_highlightPath: none
+                                    , renderA: HH.text
+                                    }
+                                )
+                        ]
                       ]
                 )
                 state.messages
@@ -175,7 +184,12 @@ appComponent = H.mkComponent { initialState, eval, render }
           ]
       -- 
       , HH.div [ HP.classes [ HH.ClassName "view" ] ]
-          [ RS.renderExpr HH.text state.expr ]
+          [ RS.renderExpr state.expr
+              # flip runReader
+                  { renderA: HH.text
+                  , mb_highlightPath: state.mb_highlightPath
+                  }
+          ]
       -- 
       , HH.div [ HP.classes [ HH.ClassName "console" ] ]
           [ HH.div [ HP.classes [ HH.ClassName "console-title" ] ]
