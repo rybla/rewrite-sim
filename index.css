@@ -69,20 +69,32 @@ body {
 /* console */
 
 .app .console {
-    padding: 0.5em;
+    display: flex;
+    flex-direction: column;
+}
+
+.console-title {
+    padding: 0.5rem 1rem;
+    font-size: 1.5em;
+}
+
+.console-menu {
+    padding: 0.5rem 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5em;
+}
+
+.console-items {
     display: flex;
     flex-direction: column;
     height: 600px;
     overflow-y: auto;
 }
 
-.console-menu {
-    display: flex;
-    flex-direction: row;
-    gap: 0.5em;
+.console-message {
+    padding: 0.5rem 1rem;
 }
-
-.console-message {}
 
 
 /* view */
