@@ -1,4 +1,4 @@
-module Example.Common where
+module RewriteSim.Example.Common where
 
 import RewriteSim as RS
 

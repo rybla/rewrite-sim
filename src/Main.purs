@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 
-import Example.Common (Expr, GlobalUpdate, System)
+import RewriteSim.Example.Common (Expr, GlobalUpdate, System)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (runReader, runReaderT)
 import Control.Monad.State (get, modify_, runStateT)
@@ -18,7 +18,7 @@ import Data.Tuple.Nested ((/\))
 import Data.Unfoldable (none)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
-import Examples (exampleExprs, exampleSystems)
+import RewriteSim.Examples (exampleExprs, exampleSystems)
 import Halogen (HalogenM)
 import Halogen as H
 import Halogen.Aff as HA
@@ -32,7 +32,7 @@ import Record as Record
 import RewriteSim (normalize)
 import RewriteSim as RS
 import Type.Proxy (Proxy(..))
-import Utilities (runIdentity)
+import RewriteSim.Utilities (runIdentity)
 
 ----------------
 -- main

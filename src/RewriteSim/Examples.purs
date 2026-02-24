@@ -1,13 +1,14 @@
-module Examples where
+module RewriteSim.Examples where
 
 import Prelude
 
-import Example.Common (Expr, Rule, System)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Tuple.Nested (type (/\), (/\))
-import Example.ABC as ABC
-import Example.LC as LC
+import RewriteSim.Example.ABC as ABC
+import RewriteSim.Example.Common (Expr, Rule, System)
+import RewriteSim.Example.ISLC as ISLC
+import RewriteSim.Example.LC as LC
 
 examples
   :: Array
@@ -18,6 +19,7 @@ examples
        )
 examples =
   [ LC.example
+  , ISLC.example
   , ABC.example
   ]
 

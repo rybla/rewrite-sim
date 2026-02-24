@@ -1,4 +1,4 @@
-module Utilities where
+module RewriteSim.Utilities where
 
 import Prelude
 

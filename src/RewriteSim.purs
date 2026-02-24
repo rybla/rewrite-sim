@@ -23,7 +23,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
-import Utilities (ignore, subReaderT, subStateT)
+import RewriteSim.Utilities (ignore, subReaderT, subStateT)
 
 ----------------
 -- expressions
@@ -34,6 +34,7 @@ data Expr a = Expr a (Array (Expr a))
 infix 5 Expr as %
 
 derive instance Generic (Expr a) _
+derive instance Functor Expr
 
 instance Eq a => Eq (Expr a) where
   eq x = genericEq x
@@ -93,9 +94,18 @@ renderExpr (Expr a es) = do
 
 type Rule a = Expr a -> Maybe (Expr a)
 
+mapRule :: forall a b. (a -> b) -> (b -> a) -> Rule a -> Rule b
+mapRule f1 f2 r e = map (map f1) (r (map f2 e))
+
 type System a =
   { name :: String
   , rules :: Array (Rule a)
+  }
+
+mapSystem :: forall a b. (a -> b) -> (b -> a) -> System a -> System b
+mapSystem f1 f2 system =
+  { name: system.name
+  , rules: map (mapRule f1 f2) system.rules
   }
 
 type Path = List Int

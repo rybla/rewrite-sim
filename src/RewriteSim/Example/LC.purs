@@ -1,11 +1,11 @@
-module Example.LC where
+module RewriteSim.Example.LC where
 
 import Prelude
 
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
-import Example.Common (Expr)
+import RewriteSim.Example.Common (Expr)
 import RewriteSim ((%))
 
 example

@@ -1,8 +1,8 @@
-module Example.ABC (example) where
+module RewriteSim.Example.ABC (example) where
 
 import Prelude
 
-import Example.Common (Expr)
+import RewriteSim.Example.Common (Expr)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (type (/\))
