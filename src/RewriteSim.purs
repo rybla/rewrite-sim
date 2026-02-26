@@ -4,11 +4,12 @@ import Prelude
 
 import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, get, gets, modify_)
+import Control.Monad.State (class MonadState, get, gets, modify_, runStateT)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
-import Data.Bifunctor (class Bifunctor)
+import Data.Bifunctor (class Bifunctor, bimap, rmap)
 import Data.Either (Either(..))
 import Data.Either.Nested (type (\/))
 import Data.Eq.Generic (genericEq)
@@ -20,6 +21,7 @@ import Data.Lens.Record (prop)
 import Data.List (List)
 import Data.List as List
 import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Ord.Generic (genericCompare)
 import Data.Show.Generic (genericShow)
@@ -135,7 +137,14 @@ newRenderExprCtx { renderA, mb_highlightPath } =
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
 
 type UnificationEnv a =
-  { sigma :: AbsExprSubst a
+  { freshCounter :: Int
+  , sigma :: AbsExprSubst a
+  }
+
+newUnificationEnv :: forall a. {} -> UnificationEnv a
+newUnificationEnv {} =
+  { freshCounter: 0
+  , sigma: Map.empty
   }
 
 type UnificationError a =
@@ -182,21 +191,29 @@ newtype Rule a = Rule
   , output :: AbsExpr a
   }
 
-applyRule :: forall m a. Monad m => Rule a -> Expr a -> m (Maybe (Expr a))
-applyRule (Rule r) e = unsafeCrashWith "Just e"
+applyRule :: forall m a. Monad m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
+applyRule (Rule r) e = do
+  _ <- unify r.input (bimap absurd identity e)
+    # flip runStateT (newUnificationEnv {})
+    # runExceptT
+  pure Nothing
 
-mapRule :: forall a b. (a -> b) -> (b -> a) -> Rule a -> Rule b
-mapRule f1 f2 r = unsafeCrashWith "map (map f1) (applyRule r (map f2 e))"
+mapRule :: forall a b. (a -> b) -> Rule a -> Rule b
+mapRule f (Rule r) = Rule
+  { name: r.name
+  , input: rmap f r.input
+  , output: rmap f r.output
+  }
 
 type System a =
   { name :: String
   , rules :: Array (Rule a)
   }
 
-mapSystem :: forall a b. (a -> b) -> (b -> a) -> System a -> System b
-mapSystem f1 f2 system =
+mapSystem :: forall a b. (a -> b) -> System a -> System b
+mapSystem f1 system =
   { name: system.name
-  , rules: map (mapRule f1 f2) system.rules
+  , rules: map (mapRule f1) system.rules
   }
 
 type Path = List Int
@@ -243,6 +260,7 @@ simplifyHere
   :: forall m ctx env a
    . MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
+  => Eq a
   => Expr a
   -> m (Maybe (LocalUpdate a))
 simplifyHere e = do
@@ -259,6 +277,7 @@ simplify
   :: forall m ctx env a
    . MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
+  => Eq a
   => Expr a
   -> m (Maybe (LocalUpdate a /\ Expr a))
 simplify e0 = e0 # asExpr # \(a /\ es) -> do
@@ -311,6 +330,7 @@ normalize
   => MonadState (NormalizationEnv env a) m
   => MonadWriter (NormalizationTrace a) m
   => MonadThrow PlainHTML m
+  => Eq a
   => Expr a
   -> m (Expr a)
 normalize e = do
