@@ -6,17 +6,11 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Tuple.Nested (type (/\), (/\))
 import RewriteSim.Example.ABC as ABC
-import RewriteSim.Example.Common (Expr, Rule, System)
+import RewriteSim.Example.Common (Example, Expr, System)
 import RewriteSim.Example.ISLC as ISLC
 import RewriteSim.Example.LC as LC
 
-examples
-  :: Array
-       ( String /\
-           { rules :: Array Rule
-           , exprs :: Array (String /\ Expr)
-           }
-       )
+examples :: Array Example
 examples =
   [ LC.example
   , ISLC.example

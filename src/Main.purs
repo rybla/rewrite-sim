@@ -170,13 +170,15 @@ appComponent = H.mkComponent { initialState, eval, render }
               StaticExpr expr ->
                 RS.renderExpr expr
                   # flip runReader
-                      { renderA: HH.text
+                      { renderX: absurd
+                      , renderA: HH.text
                       , mb_highlightPath: none
                       }
               UpdateExpr update ->
                 RS.renderExpr (if state.focusNew then update.new else update.old)
                   # flip runReader
-                      { renderA: HH.text
+                      { renderX: absurd
+                      , renderA: HH.text
                       , mb_highlightPath: Just update.update.path
                       }
           ]
@@ -244,6 +246,7 @@ setExpr expr state =
                     # flip runReader
                         ( RS.newRenderExprCtx
                             { mb_highlightPath: none
+                            , renderX: absurd
                             , renderA: HH.text
                             }
                         )

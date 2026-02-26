@@ -6,16 +6,15 @@ import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, get, gets, modify_, runStateT)
+import Control.Monad.State (class MonadState, execStateT, get, gets, modify_)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap, rmap)
 import Data.Either (Either(..))
-import Data.Either.Nested (type (\/))
 import Data.Eq.Generic (genericEq)
-import Data.Foldable (fold, foldM, length, null, traverse_)
+import Data.Foldable (fold, length, null, traverse_)
 import Data.Generic.Rep (class Generic)
-import Data.Lens (Lens', view, (%=), (.=))
+import Data.Lens (view, (.=))
 import Data.Lens.At (at)
 import Data.Lens.Record (prop)
 import Data.List (List)
@@ -68,7 +67,9 @@ asExpr (Expr a es) = a /\ es
 -- | An abstract expression, which CAN contain metavariables.
 type AbsExpr = GenericExpr MetaVar
 
-data GenericExpr x a = MetaExpr x | Expr a (Array (GenericExpr x a))
+data GenericExpr x a
+  = MetaExpr x
+  | Expr a (Array (GenericExpr x a))
 
 infix 5 Expr as %
 
@@ -84,57 +85,86 @@ instance Eq a => Eq (Expr a) where
 instance Show a => Show (Expr a) where
   show x = genericShow x
 
-type RenderExprCtx a w i =
-  { renderA :: a -> HTML w i
+me :: forall a. String -> AbsExpr a
+me label = MetaExpr (MetaVar { label, index: 0 })
+
+type RenderExprCtx x a w i =
+  { renderX :: x -> HTML w i
+  , renderA :: a -> HTML w i
   , mb_highlightPath :: Maybe Path
   }
 
 newRenderExprCtx
-  :: forall a w i
-   . { renderA :: a -> HTML w i
+  :: forall x a w i
+   . { renderX :: x -> HTML w i
+     , renderA :: a -> HTML w i
      , mb_highlightPath :: Maybe Path
      }
-  -> RenderExprCtx a w i
-newRenderExprCtx { renderA, mb_highlightPath } =
-  { renderA
+  -> RenderExprCtx x a w i
+newRenderExprCtx { renderX, renderA, mb_highlightPath } =
+  { renderX
+  , renderA
   , mb_highlightPath
   }
 
--- renderExpr :: forall m w i a. MonadReader (RenderExprCtx a w i) m => Expr a -> m (HTML w i)
--- renderExpr (Expr a es) = do
---   { renderA, mb_highlightPath } <- ask
---   let r_a = a # renderA
---   r_es <- es # traverseWithIndex \i e ->
---     local
---       ( \ctx -> ctx
---           { mb_highlightPath = do
---               { head: i', tail: highlightPath' } <- List.uncons =<< ctx.mb_highlightPath
---               guard $ i == i'
---               pure highlightPath'
---           }
---       )
---       do
---         renderExpr e
---   pure $
---     HH.div
---       [ HP.classes $ fold
---           [ [ HH.ClassName "expr"
---             , HH.ClassName if null es then "leaf" else "branch"
---             ]
---           , case mb_highlightPath of
---               Just List.Nil -> [ HH.ClassName "highlight" ]
---               _ -> []
---           ]
---       ]
---       [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_a ]
---       , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
---       ]
+renderExpr :: forall m w i x a. MonadReader (RenderExprCtx x a w i) m => GenericExpr x a -> m (HTML w i)
+renderExpr (MetaExpr x) = do
+  { renderX, mb_highlightPath } <- ask
+  let r_x = x # renderX
+  pure $
+    HH.div
+      [ HP.classes $ fold
+          [ [ HH.ClassName "expr"
+            , HH.ClassName "leaf"
+            , HH.ClassName "meta"
+            ]
+          , case mb_highlightPath of
+              Just List.Nil -> [ HH.ClassName "highlight" ]
+              _ -> []
+          ]
+      ]
+      [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_x ]
+      ]
+renderExpr (Expr a es) = do
+  { renderA, mb_highlightPath } <- ask
+  let r_a = a # renderA
+  r_es <- es # traverseWithIndex \i e ->
+    local
+      ( \ctx -> ctx
+          { mb_highlightPath = do
+              { head: i', tail: highlightPath' } <- List.uncons =<< ctx.mb_highlightPath
+              guard $ i == i'
+              pure highlightPath'
+          }
+      )
+      do
+        renderExpr e
+  pure $
+    HH.div
+      [ HP.classes $ fold
+          [ [ HH.ClassName "expr"
+            , HH.ClassName if null es then "leaf" else "branch"
+            ]
+          , case mb_highlightPath of
+              Just List.Nil -> [ HH.ClassName "highlight" ]
+              _ -> []
+          ]
+      ]
+      [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_a ]
+      , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
+      ]
 
 ----------------
 -- unification
 ----------------
 
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
+
+substAbsExpr :: forall a. AbsExprSubst a -> AbsExpr a -> Expr a
+substAbsExpr sigma (MetaExpr x) = case Map.lookup x sigma of
+  Nothing -> unsafeCrashWith $ "Unknown metavariable: " <> show x
+  Just e -> substAbsExpr sigma e
+substAbsExpr sigma (Expr a es) = Expr a (map (substAbsExpr sigma) es)
 
 type UnificationEnv a =
   { freshCounter :: Int
@@ -191,12 +221,17 @@ newtype Rule a = Rule
   , output :: AbsExpr a
   }
 
+newRule :: forall a. String -> AbsExpr a -> AbsExpr a -> Rule a
+newRule name input output = Rule { name, input, output }
+
 applyRule :: forall m a. Monad m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
 applyRule (Rule r) e = do
-  _ <- unify r.input (bimap absurd identity e)
-    # flip runStateT (newUnificationEnv {})
+  err_or_env <- unify r.input (bimap absurd identity e)
+    # flip execStateT (newUnificationEnv {})
     # runExceptT
-  pure Nothing
+  case err_or_env of
+    Left _err -> pure Nothing
+    Right env -> pure $ Just $ substAbsExpr env.sigma r.output
 
 mapRule :: forall a b. (a -> b) -> Rule a -> Rule b
 mapRule f (Rule r) = Rule
