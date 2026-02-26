@@ -5,17 +5,26 @@ import Prelude
 import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, get, modify_)
+import Control.Monad.State (class MonadState, get, gets, modify_)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
+import Data.Bifunctor (class Bifunctor)
+import Data.Either (Either(..))
+import Data.Either.Nested (type (\/))
 import Data.Eq.Generic (genericEq)
-import Data.Foldable (fold, null)
+import Data.Foldable (fold, foldM, length, null, traverse_)
 import Data.Generic.Rep (class Generic)
+import Data.Lens (Lens', view, (%=), (.=))
+import Data.Lens.At (at)
+import Data.Lens.Record (prop)
 import Data.List (List)
 import Data.List as List
+import Data.Map (Map)
 import Data.Maybe (Maybe(..), fromMaybe')
+import Data.Ord.Generic (genericCompare)
 import Data.Show.Generic (genericShow)
 import Data.TraversableWithIndex (traverseWithIndex)
+import Data.Tuple (uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Unfoldable (none)
 import Halogen.HTML (HTML, PlainHTML)
@@ -24,16 +33,47 @@ import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
 import RewriteSim.Utilities (ignore, subReaderT, subStateT)
+import Type.Proxy (Proxy(..))
+
+----------------
+-- metavariables
+----------------
+
+newtype MetaVar = MetaVar { label :: String, index :: Int }
+
+derive instance Generic MetaVar _
+
+instance Show MetaVar where
+  show x = genericShow x
+
+instance Eq MetaVar where
+  eq x = genericEq x
+
+instance Ord MetaVar where
+  compare x = genericCompare x
 
 ----------------
 -- expressions
 ----------------
 
-data Expr a = Expr a (Array (Expr a))
+-- | A concrete expression, which CANNOT contain metavariables.
+type Expr = GenericExpr Void
+
+asExpr :: forall a. Expr a -> a /\ Array (Expr a)
+asExpr (MetaExpr v) = absurd v
+asExpr (Expr a es) = a /\ es
+
+-- | An abstract expression, which CAN contain metavariables.
+type AbsExpr = GenericExpr MetaVar
+
+data GenericExpr x a = MetaExpr x | Expr a (Array (GenericExpr x a))
 
 infix 5 Expr as %
 
-derive instance Generic (Expr a) _
+derive instance Generic (GenericExpr x a) _
+
+derive instance Bifunctor GenericExpr
+
 derive instance Functor Expr
 
 instance Eq a => Eq (Expr a) where
@@ -58,47 +98,95 @@ newRenderExprCtx { renderA, mb_highlightPath } =
   , mb_highlightPath
   }
 
-renderExpr :: forall m w i a. MonadReader (RenderExprCtx a w i) m => Expr a -> m (HTML w i)
-renderExpr (Expr a es) = do
-  { renderA, mb_highlightPath } <- ask
-  let r_a = a # renderA
-  r_es <- es # traverseWithIndex \i e ->
-    local
-      ( \ctx -> ctx
-          { mb_highlightPath = do
-              { head: i', tail: highlightPath' } <- List.uncons =<< ctx.mb_highlightPath
-              guard $ i == i'
-              pure highlightPath'
-          }
-      )
-      do
-        renderExpr e
-  pure $
-    HH.div
-      [ HP.classes $ fold
-          [ [ HH.ClassName "expr"
-            , HH.ClassName if null es then "leaf" else "branch"
-            ]
-          , case mb_highlightPath of
-              Just List.Nil -> [ HH.ClassName "highlight" ]
-              _ -> []
-          ]
-      ]
-      [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_a ]
-      , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
-      ]
+-- renderExpr :: forall m w i a. MonadReader (RenderExprCtx a w i) m => Expr a -> m (HTML w i)
+-- renderExpr (Expr a es) = do
+--   { renderA, mb_highlightPath } <- ask
+--   let r_a = a # renderA
+--   r_es <- es # traverseWithIndex \i e ->
+--     local
+--       ( \ctx -> ctx
+--           { mb_highlightPath = do
+--               { head: i', tail: highlightPath' } <- List.uncons =<< ctx.mb_highlightPath
+--               guard $ i == i'
+--               pure highlightPath'
+--           }
+--       )
+--       do
+--         renderExpr e
+--   pure $
+--     HH.div
+--       [ HP.classes $ fold
+--           [ [ HH.ClassName "expr"
+--             , HH.ClassName if null es then "leaf" else "branch"
+--             ]
+--           , case mb_highlightPath of
+--               Just List.Nil -> [ HH.ClassName "highlight" ]
+--               _ -> []
+--           ]
+--       ]
+--       [ HH.div [ HP.classes [ HH.ClassName "expr-label" ] ] [ r_a ]
+--       , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
+--       ]
+
+----------------
+-- unification
+----------------
+
+type AbsExprSubst a = Map MetaVar (AbsExpr a)
+
+type UnificationEnv a =
+  { sigma :: AbsExprSubst a
+  }
+
+type UnificationError a =
+  { e1 :: AbsExpr a
+  , e2 :: AbsExpr a
+  , reason :: String
+  }
+
+unifyMeta
+  :: forall m a
+   . MonadThrow (UnificationError a) m
+  => MonadState (UnificationEnv a) m
+  => Eq a
+  => MetaVar
+  -> AbsExpr a
+  -> m Unit
+unifyMeta x e = do
+  gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
+    Nothing -> prop (Proxy @"sigma") <<< at x .= Just e
+    Just e' -> unify e e'
+
+unify
+  :: forall m a
+   . MonadThrow (UnificationError a) m
+  => MonadState (UnificationEnv a) m
+  => Eq a
+  => AbsExpr a
+  -> AbsExpr a
+  -> m Unit
+unify (MetaExpr x) e = unifyMeta x e
+unify e (MetaExpr x) = unifyMeta x e
+unify e1@(Expr a1 es1) e2@(Expr a2 es2) = do
+  unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
+  unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
+  Array.zip es1 es2 # traverse_ (uncurry unify)
 
 ----------------
 -- rewrite systems
 ----------------
 
-type Rule a = Expr a -> Maybe (Expr a)
+newtype Rule a = Rule
+  { name :: String
+  , input :: AbsExpr a
+  , output :: AbsExpr a
+  }
 
 applyRule :: forall a. Rule a -> Expr a -> Maybe (Expr a)
-applyRule = identity
+applyRule r e = unsafeCrashWith "Just e"
 
 mapRule :: forall a b. (a -> b) -> (b -> a) -> Rule a -> Rule b
-mapRule f1 f2 r e = map (map f1) (applyRule r (map f2 e))
+mapRule f1 f2 r = unsafeCrashWith "map (map f1) (applyRule r (map f2 e))"
 
 type System a =
   { name :: String
@@ -173,7 +261,7 @@ simplify
   => MonadState (SimplificationEnv env a) m
   => Expr a
   -> m (Maybe (LocalUpdate a /\ Expr a))
-simplify e0@(Expr a es) = do
+simplify e0 = e0 # asExpr # \(a /\ es) -> do
   let
     go i = case Array.index es i of
       Nothing -> simplifyHere e0 >>= case _ of

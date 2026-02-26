@@ -13,13 +13,13 @@
             "lists",
             "maybe",
             "prelude",
+            "profunctor-lenses",
             "record",
             "transformers"
           ],
           "build_plan": [
             "aff",
             "arrays",
-            "avar",
             "bifunctors",
             "catenable-lists",
             "console",
@@ -57,7 +57,6 @@
             "media-types",
             "newtype",
             "nonempty",
-            "now",
             "nullable",
             "numbers",
             "ordered-collections",
@@ -66,6 +65,7 @@
             "partial",
             "prelude",
             "profunctor",
+            "profunctor-lenses",
             "record",
             "refs",
             "safe-coerce",
@@ -620,19 +620,17 @@
       "version": "8.0.0",
       "integrity": "sha256-9BRIrSdRoYybfiUmBqgKJ66cPqxYHb277bVWQMn/9sg=",
       "dependencies": [
-        "bifunctors",
         "control",
         "datetime",
         "effect",
         "either",
         "exceptions",
-        "foldable-traversable",
         "functions",
-        "maybe",
         "newtype",
         "parallel",
+        "partial",
         "prelude",
-        "refs",
+        "st",
         "tailrec",
         "transformers",
         "unsafe-coerce"
@@ -657,19 +655,6 @@
         "tuples",
         "unfoldable",
         "unsafe-coerce"
-      ]
-    },
-    "avar": {
-      "type": "registry",
-      "version": "5.0.0",
-      "integrity": "sha256-9tAeYrHAFSPkbJ7UCtpyLq7QawSrwf/nwLT9BcmfUx8=",
-      "dependencies": [
-        "aff",
-        "effect",
-        "either",
-        "exceptions",
-        "functions",
-        "maybe"
       ]
     },
     "bifunctors": {
@@ -778,11 +763,16 @@
       "version": "12.0.0",
       "integrity": "sha256-rqIhPQAcaQm41lCRQj4psNUYRg3/q/iI3TGWTRG4zlM=",
       "dependencies": [
+        "datetime",
         "media-types",
         "prelude",
+        "strings",
         "web-clipboard",
+        "web-events",
+        "web-html",
         "web-pointerevents",
-        "web-touchevents"
+        "web-touchevents",
+        "web-uievents"
       ]
     },
     "effect": {
@@ -865,13 +855,13 @@
       "dependencies": [
         "either",
         "functions",
-        "identity",
         "integers",
         "lists",
         "maybe",
         "prelude",
         "strings",
-        "transformers"
+        "transformers",
+        "unsafe-coerce"
       ]
     },
     "foreign-object": {
@@ -890,7 +880,8 @@
         "tailrec",
         "tuples",
         "typelevel-prelude",
-        "unfoldable"
+        "unfoldable",
+        "unsafe-coerce"
       ]
     },
     "fork": {
@@ -898,7 +889,9 @@
       "version": "6.0.0",
       "integrity": "sha256-0keBVeZZg1eCZEy/En1CohVW829gQUqKtqBNIRa93/A=",
       "dependencies": [
-        "aff"
+        "aff",
+        "prelude",
+        "transformers"
       ]
     },
     "free": {
@@ -928,9 +921,15 @@
       "integrity": "sha256-e7SiV9rg+rVARsU9cxA/02sps7ubogvVgYwj8nWosX4=",
       "dependencies": [
         "const",
-        "exists",
+        "either",
         "gen",
-        "lists"
+        "lists",
+        "newtype",
+        "nonempty",
+        "prelude",
+        "tailrec",
+        "tuples",
+        "unsafe-coerce"
       ]
     },
     "functions": {
@@ -984,26 +983,44 @@
       "integrity": "sha256-YrUm27QEiE1DyGaGJ5MNLVg4H/P3gnX/NVv1gRtWjB4=",
       "dependencies": [
         "aff",
-        "avar",
+        "bifunctors",
         "console",
-        "const",
+        "control",
         "dom-indexed",
         "effect",
+        "either",
+        "exceptions",
+        "foldable-traversable",
         "foreign",
         "fork",
         "free",
         "freeap",
+        "functions",
         "halogen-subscriptions",
         "halogen-vdom",
+        "lazy",
+        "lists",
+        "maybe",
         "media-types",
-        "nullable",
+        "newtype",
         "ordered-collections",
         "parallel",
+        "prelude",
         "profunctor",
+        "refs",
+        "strings",
+        "tailrec",
         "transformers",
+        "tuples",
+        "unfoldable",
         "unsafe-coerce",
         "unsafe-reference",
+        "web-clipboard",
+        "web-dom",
+        "web-events",
         "web-file",
+        "web-html",
+        "web-touchevents",
         "web-uievents"
       ]
     },
@@ -1013,9 +1030,12 @@
       "integrity": "sha256-1eBtVZENgGtKuOY9H0iuYD3dO1CSqmOIyhYe4OhypOU=",
       "dependencies": [
         "arrays",
+        "contravariant",
+        "control",
         "effect",
         "foldable-traversable",
-        "functors",
+        "maybe",
+        "prelude",
         "refs",
         "safe-coerce",
         "unsafe-reference"
@@ -1026,16 +1046,21 @@
       "version": "8.0.0",
       "integrity": "sha256-jk6aj/tH630skFVk6mB5Q+0g2zb897KX72T63fJhJ2Y=",
       "dependencies": [
+        "arrays",
         "bifunctors",
         "effect",
         "foreign",
         "foreign-object",
+        "functions",
         "maybe",
+        "newtype",
+        "nullable",
         "prelude",
         "refs",
         "tuples",
         "unsafe-coerce",
-        "web-html"
+        "web-dom",
+        "web-events"
       ]
     },
     "identity": {
@@ -1075,10 +1100,12 @@
       "dependencies": [
         "datetime",
         "effect",
-        "exceptions",
+        "enums",
         "foreign",
+        "functions",
         "integers",
-        "now"
+        "maybe",
+        "prelude"
       ]
     },
     "js-promise": {
@@ -1091,6 +1118,7 @@
         "foldable-traversable",
         "functions",
         "maybe",
+        "newtype",
         "prelude"
       ]
     },
@@ -1166,23 +1194,14 @@
         "unfoldable"
       ]
     },
-    "now": {
-      "type": "registry",
-      "version": "6.0.0",
-      "integrity": "sha256-mTyG4s8tps3XIf0jjV/lME2/QlwMzrQly2wqfSSUM3o=",
-      "dependencies": [
-        "datetime",
-        "effect"
-      ]
-    },
     "nullable": {
       "type": "registry",
       "version": "6.0.0",
       "integrity": "sha256-CDAZk+L9Sc0GCFTkE8n+qdp4Ys8avvnkU+m2hVALt7M=",
       "dependencies": [
-        "effect",
         "functions",
-        "maybe"
+        "maybe",
+        "prelude"
       ]
     },
     "numbers": {
@@ -1191,7 +1210,8 @@
       "integrity": "sha256-ZydYckgwRAnRaFC7pu6fADhzdwX+UqHZrfJyet64zls=",
       "dependencies": [
         "functions",
-        "maybe"
+        "maybe",
+        "prelude"
       ]
     },
     "ordered-collections": {
@@ -1200,13 +1220,16 @@
       "integrity": "sha256-NaEXc2cz/7lJfxPWEja4XlZbGxuRqJwFKQJjsJf51kQ=",
       "dependencies": [
         "arrays",
+        "control",
         "foldable-traversable",
+        "functions",
         "gen",
         "lists",
         "maybe",
+        "newtype",
         "partial",
         "prelude",
-        "st",
+        "safe-coerce",
         "tailrec",
         "tuples",
         "unfoldable"
@@ -1266,6 +1289,34 @@
         "tuples"
       ]
     },
+    "profunctor-lenses": {
+      "type": "registry",
+      "version": "8.0.0",
+      "integrity": "sha256-mVIYR3kEMHyO2m+VicJeZeVyDJ4IgvkMzDll3JdnRN4=",
+      "dependencies": [
+        "arrays",
+        "bifunctors",
+        "const",
+        "control",
+        "distributive",
+        "either",
+        "foldable-traversable",
+        "foreign-object",
+        "functors",
+        "identity",
+        "lists",
+        "maybe",
+        "newtype",
+        "ordered-collections",
+        "partial",
+        "prelude",
+        "profunctor",
+        "record",
+        "safe-coerce",
+        "transformers",
+        "tuples"
+      ]
+    },
     "record": {
       "type": "registry",
       "version": "4.0.0",
@@ -1298,6 +1349,7 @@
       "version": "6.2.0",
       "integrity": "sha256-WI4MEkkwUd4pnwZQ3G8VKWgX5t1RSNJludm5e9boaRo=",
       "dependencies": [
+        "effect",
         "partial",
         "prelude",
         "tailrec",
@@ -1420,7 +1472,14 @@
       "version": "6.0.0",
       "integrity": "sha256-3CV0txwKddLoj8qBrRjUWbiX0M8+rnOpi1iApr5PEb0=",
       "dependencies": [
+        "effect",
+        "functions",
         "js-promise",
+        "maybe",
+        "nullable",
+        "prelude",
+        "unsafe-coerce",
+        "web-events",
         "web-html"
       ]
     },
@@ -1429,6 +1488,13 @@
       "version": "6.0.0",
       "integrity": "sha256-rVeqkxChkjqisDvOujy9BMEgGqJkwX3t6g21bXfiG5o=",
       "dependencies": [
+        "effect",
+        "enums",
+        "maybe",
+        "newtype",
+        "nullable",
+        "prelude",
+        "unsafe-coerce",
         "web-events"
       ]
     },
@@ -1438,9 +1504,15 @@
       "integrity": "sha256-wZNeldG0OU+8qGycUJ9e6vxf1/GC4Ep4OlRMhvjs9LA=",
       "dependencies": [
         "datetime",
+        "effect",
         "enums",
         "foreign",
-        "nullable"
+        "functions",
+        "maybe",
+        "newtype",
+        "nullable",
+        "prelude",
+        "unsafe-coerce"
       ]
     },
     "web-file": {
@@ -1448,9 +1520,21 @@
       "version": "4.0.0",
       "integrity": "sha256-txsdkeWBKU/+5v9m5c6kysgJQSDyV1r7MHaeT4STpjQ=",
       "dependencies": [
+        "datetime",
+        "effect",
+        "enums",
         "foreign",
+        "integers",
+        "maybe",
         "media-types",
-        "web-dom"
+        "nullable",
+        "numbers",
+        "partial",
+        "prelude",
+        "tuples",
+        "unfoldable",
+        "unsafe-coerce",
+        "web-events"
       ]
     },
     "web-html": {
@@ -1458,8 +1542,19 @@
       "version": "4.1.0",
       "integrity": "sha256-sMwdo5u2DBOFoQzcJLKBp9b4ChU8YSRBjSi9g1Wk42g=",
       "dependencies": [
+        "effect",
+        "enums",
+        "foreign",
+        "functions",
         "js-date",
+        "maybe",
+        "media-types",
+        "newtype",
+        "nullable",
+        "prelude",
+        "unsafe-coerce",
         "web-dom",
+        "web-events",
         "web-file",
         "web-storage"
       ]
@@ -1472,7 +1567,10 @@
         "effect",
         "maybe",
         "prelude",
+        "unsafe-coerce",
         "web-dom",
+        "web-events",
+        "web-html",
         "web-uievents"
       ]
     },
@@ -1481,7 +1579,11 @@
       "version": "5.0.0",
       "integrity": "sha256-YJfos55oeKtBStNfoWfeflSy8j+4IDym5eaZtIY7YM4=",
       "dependencies": [
+        "effect",
+        "maybe",
         "nullable",
+        "prelude",
+        "unsafe-coerce",
         "web-events"
       ]
     },
@@ -1490,6 +1592,12 @@
       "version": "4.0.0",
       "integrity": "sha256-H02c53BJlHDlAgogj/x8bM7PagJjhMMrMPYy9I7Rf0s=",
       "dependencies": [
+        "functions",
+        "maybe",
+        "nullable",
+        "prelude",
+        "unsafe-coerce",
+        "web-events",
         "web-uievents"
       ]
     },
@@ -1498,6 +1606,13 @@
       "version": "5.0.0",
       "integrity": "sha256-yh9uVLIGu8wE1+jwLehtfsRfR1eyiShhIMMhBPqKybE=",
       "dependencies": [
+        "effect",
+        "enums",
+        "maybe",
+        "nullable",
+        "prelude",
+        "unsafe-coerce",
+        "web-events",
         "web-html"
       ]
     }
