@@ -1,4 +1,8 @@
-build:
+install:
+  bun install
+  bun spago install
+
+build: install
   bun spago build
 
 bundle: build
