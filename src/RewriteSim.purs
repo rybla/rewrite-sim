@@ -94,8 +94,11 @@ renderExpr (Expr a es) = do
 
 type Rule a = Expr a -> Maybe (Expr a)
 
+applyRule :: forall a. Rule a -> Expr a -> Maybe (Expr a)
+applyRule = identity
+
 mapRule :: forall a b. (a -> b) -> (b -> a) -> Rule a -> Rule b
-mapRule f1 f2 r e = map (map f1) (r (map f2 e))
+mapRule f1 f2 r e = map (map f1) (applyRule r (map f2 e))
 
 type System a =
   { name :: String
@@ -159,7 +162,7 @@ simplifyHere e = do
   let
     go i = case Array.index system.rules i of
       Nothing -> pure Nothing
-      Just r -> case r e of
+      Just r -> case applyRule r e of
         Nothing -> go (i + 1)
         Just e' -> pure $ Just { path: List.reverse revPath, old: e, new: e' }
   go 0
