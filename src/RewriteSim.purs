@@ -182,8 +182,8 @@ newtype Rule a = Rule
   , output :: AbsExpr a
   }
 
-applyRule :: forall a. Rule a -> Expr a -> Maybe (Expr a)
-applyRule r e = unsafeCrashWith "Just e"
+applyRule :: forall m a. Monad m => Rule a -> Expr a -> m (Maybe (Expr a))
+applyRule (Rule r) e = unsafeCrashWith "Just e"
 
 mapRule :: forall a b. (a -> b) -> (b -> a) -> Rule a -> Rule b
 mapRule f1 f2 r = unsafeCrashWith "map (map f1) (applyRule r (map f2 e))"
@@ -250,7 +250,7 @@ simplifyHere e = do
   let
     go i = case Array.index system.rules i of
       Nothing -> pure Nothing
-      Just r -> case applyRule r e of
+      Just r -> applyRule r e >>= case _ of
         Nothing -> go (i + 1)
         Just e' -> pure $ Just { path: List.reverse revPath, old: e, new: e' }
   go 0
