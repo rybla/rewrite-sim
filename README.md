@@ -1,15 +1,16 @@
-# template-purescript-halogen-webapp
+# rewrite-sim
 
-To install dependencies:
+TODO: description
 
-```bash
-bun install
+## Usage
+
+Requirements:
+
+- [just](https://just.systems)
+
+To run the web app:
+
+```sh
+just serve
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.1.35. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
