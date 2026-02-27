@@ -31,17 +31,23 @@ example = Tuple "LC"
       --   
       -- subst/app
       --   
-      , newRule "subst/app" (subst (me "x") (me "v") (app (me "f") (me "a"))) (app (subst (me "x") (me "v") (me "f")) (subst (me "x") (me "v") (me "a")))
+      , newRule "subst/app"
+          (subst (me "x") (me "v") (app (me "f") (me "a")))
+          (app (subst (me "x") (me "v") (me "f")) (subst (me "x") (me "v") (me "a")))
       --   
       -- subst/lam
       --   
       -- TODO: deal with colliding names
-      , newRule "subst/lam" (subst (me "x") (me "v") (lam (me "x") (me "b"))) (lam (me "x") (subst (me "x") (me "v") (me "b")))
+      , newRule "subst/lam"
+          (subst (me "x") (me "v") (lam (me "x") (me "b")))
+          (lam (me "x") (subst (me "x") (me "v") (me "b")))
       --   
       -- subst/var
       --   
       -- TODO: deal with case where x /= y
-      , newRule "subst/var" (subst (me "x") (me "v") (var (me "x"))) (me "v")
+      , newRule "subst/var"
+          (subst (me "x") (me "v") (var (me "x")))
+          (me "v")
       ]
   , exprs:
       [ Tuple "ex1" $
