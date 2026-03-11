@@ -1,0 +1,37 @@
+module Test.RewriteSim where
+
+import Prelude
+
+import Control.Monad.Except (runExceptT)
+import Control.Monad.Reader (runReaderT)
+import Control.Monad.State (runStateT)
+import Control.Monad.Writer (runWriterT)
+import Data.Either (Either(..))
+import Data.Traversable (traverse, traverse_)
+import Data.Tuple.Nested ((/\))
+import RewriteSim (newNormalizationCtx, newNormalizationEnv, normalize)
+import RewriteSim.Examples (examples)
+import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (fail, shouldEqual)
+
+--------------------------------------------------------------------------------
+
+spec :: Spec Unit
+spec = do
+  examples # traverse_ \example -> do
+    describe ("example " <> example.name) do
+      example.tests # traverse_ \test -> do
+        it test.name do
+          result <- normalize test.input
+            # runExceptT
+            # flip runReaderT
+                ( newNormalizationCtx { system: { name: example.name, rules: example.rules } } {}
+                )
+            # flip runStateT
+                ( newNormalizationEnv { gas: 1000 } {}
+                )
+            # runWriterT
+          case result of
+            _ -> pure unit
+            (Left _err /\ _env) /\ _trace -> fail $ "Error"
+            (Right output /\ _env) /\ _trace -> shouldEqual output test.output

@@ -13,3 +13,6 @@ serve: bundle
 
 deploy: bundle
   bun gh-pages --dist dist --nojekyll
+
+test: build
+  bun spago test

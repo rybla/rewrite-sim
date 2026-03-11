@@ -1,10 +1,9 @@
 module RewriteSim.Example.ISLC where
 
-import Data.Tuple (Tuple(..))
 import RewriteSim.Example.Common (Example)
 
 example :: Example
-example = Tuple "ISLC" { rules: [], exprs: [] }
+example = { name: "ISLC", rules: [], tests: [] }
 
 -- example :: Example
 -- example = Tuple "ISLC"

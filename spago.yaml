@@ -11,6 +11,8 @@ package:
     - prelude
     - profunctor-lenses
     - record
+    - spec
+    - spec-node
     - transformers
   test:
     main: Test.Main

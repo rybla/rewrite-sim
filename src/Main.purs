@@ -145,8 +145,8 @@ appComponent = H.mkComponent { initialState, eval, render }
           , HH.div [ HP.classes [ HH.ClassName "menu-section" ] ]
               [ HH.div [ HP.classes [ HH.ClassName "menu-section-title" ] ]
                   [ HH.text "Expressions" ]
-              , HH.div [ HP.classes [ HH.ClassName "menu-section-items" ] ] $ exampleExprs # Map.lookup state.system.name # fold # map \(label /\ expr) ->
-                  HH.button [ HE.onClick $ const $ SetExpr expr ] [ HH.text label ]
+              , HH.div [ HP.classes [ HH.ClassName "menu-section-items" ] ] $ exampleExprs # Map.lookup state.system.name # fold # map \test ->
+                  HH.button [ HE.onClick $ const $ SetExpr test.input ] [ HH.text test.name ]
               ]
           ]
       -- 
@@ -263,4 +263,4 @@ getDefaultExprForSystemName systemName = exampleExprs
   # fold
   # flip Array.index 0
   # fromMaybe' (\_ -> unsafeCrashWith "empty exampleExprs")
-  # snd
+  # _.input

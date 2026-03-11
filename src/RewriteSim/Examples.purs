@@ -4,9 +4,9 @@ import Prelude
 
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Tuple.Nested ((/\))
 import RewriteSim.Example.ABC as ABC
-import RewriteSim.Example.Common (Example, Expr, System)
+import RewriteSim.Example.Common (Example, ExampleTest, System)
 import RewriteSim.Example.ISLC as ISLC
 import RewriteSim.Example.LC as LC
 
@@ -17,12 +17,12 @@ examples =
   , ABC.example
   ]
 
-exampleExprs :: Map String (Array (String /\ Expr))
+exampleExprs :: Map String (Array ExampleTest)
 exampleExprs = examples
-  # map (\(systemName /\ x) -> (systemName /\ x.exprs))
+  # map (\example -> (example.name /\ example.tests))
   # Map.fromFoldable
 
 exampleSystems :: Array System
 exampleSystems = examples
-  # map (\(systemName /\ x) -> { name: systemName, rules: x.rules })
+  # map (\example -> { name: example.name, rules: example.rules })
 

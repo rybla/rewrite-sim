@@ -2,55 +2,58 @@ module RewriteSim.Example.LC where
 
 import Prelude
 
-import Data.Tuple (Tuple(..))
 import RewriteSim (me, newRule, (%))
 import RewriteSim.Example.Common (Example, GenericExpr)
 
 app :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
 app f a = "app" % [ f, a ]
 
-lam :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
-lam x b = "lam" % [ x, b ]
+lam :: forall x. GenericExpr x -> GenericExpr x
+lam b = "lam" % [ b ]
 
 var :: forall x. GenericExpr x -> GenericExpr x
 var x = "var" % [ x ]
 
-lit :: forall x. String -> GenericExpr x
-lit s = s % []
+suc :: forall x. GenericExpr x -> GenericExpr x
+suc x = "suc" % [ x ]
+
+zero :: forall x. GenericExpr x
+zero = "zero" % []
+
+-- lit :: forall x. String -> GenericExpr x
+-- lit s = s % []
 
 subst :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x -> GenericExpr x
 subst x v a = "subst" % [ x, v, a ]
 
--- TODO: the way to avoid name collisions and difference checks is just to use DeBruijn indices
 example :: Example
-example = Tuple "LC"
-  { rules:
+example =
+  { name: "LC"
+  , rules:
       [ newRule "beta"
-          (app (lam (me "x") (me "b")) (me "a"))
-          (subst (me "x") (me "a") (me "b"))
-      --   
-      -- subst/app
-      --   
+          (app (lam (me "b")) (me "a"))
+          (subst zero (me "a") (me "b"))
       , newRule "subst/app"
           (subst (me "x") (me "v") (app (me "f") (me "a")))
           (app (subst (me "x") (me "v") (me "f")) (subst (me "x") (me "v") (me "a")))
-      --   
-      -- subst/lam
-      --   
-      -- TODO: deal with colliding names
       , newRule "subst/lam"
-          (subst (me "x") (me "v") (lam (me "x") (me "b")))
-          (lam (me "x") (subst (me "x") (me "v") (me "b")))
-      --   
-      -- subst/var
-      --   
-      -- TODO: deal with case where x /= y
-      , newRule "subst/var"
-          (subst (me "x") (me "v") (var (me "x")))
+          (subst (me "x") (me "v") (lam (me "b")))
+          (lam (subst (suc (me "x")) (me "v") (me "b")))
+      , newRule "subst/var/zero"
+          (subst zero (me "v") (var (me "x")))
           (me "v")
+      , newRule "subst/var/suc"
+          (subst (suc (me "y")) (me "v") (var (me "x")))
+          (var (me "x"))
       ]
-  , exprs:
-      [ Tuple "ex1" $
-          "app" % [ "lam" % [ "x" % [], "var" % [ "x" % [] ] ], "var" % [ "a" % [] ] ]
+  , tests:
+      [ { name: "lam-app"
+        , input: app (lam (var zero)) (var zero)
+        , output: lam (var zero)
+        }
+      , { name: "lam-app-2"
+        , input: app (app (lam (lam (var zero))) (var zero)) (var (suc zero))
+        , output: lam (var zero)
+        }
       ]
   }

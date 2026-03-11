@@ -1,10 +1,9 @@
 module RewriteSim.Example.ABC (example) where
 
-import Data.Tuple (Tuple(..))
 import RewriteSim.Example.Common (Example)
 
 example :: Example
-example = Tuple "ABC" { rules: [], exprs: [] }
+example = { name: "ABC", rules: [], tests: [] }
 
 -- example
 --   :: Tuple String
