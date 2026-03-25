@@ -33,6 +33,9 @@ appTerm f a = "app" % [ f, a ]
 subTerm :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
 subTerm s a = "sub" % [ s, a ]
 
+holeTerm :: forall x. GenericExpr x
+holeTerm = "holeTerm" % []
+
 -- contexts
 
 zeroCtx :: forall x. GenericExpr x
@@ -40,6 +43,9 @@ zeroCtx = "zeroCtx" % []
 
 sucCtx :: forall x. GenericExpr x -> GenericExpr x
 sucCtx n = "sucCtx" % [ n ]
+
+holeCtx :: forall x. GenericExpr x
+holeCtx = "holeCtx" % []
 
 -- substitutions
 
@@ -51,6 +57,9 @@ extendSub s a = "extend" % [ s, a ]
 
 composeSub :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
 composeSub s t = "compose" % [ s, t ]
+
+holeSub :: forall x. GenericExpr x
+holeSub = "holeSub" % []
 
 --------------------------------------------------------------------------------
 -- Derivation Rules
@@ -75,6 +84,9 @@ subDer { m, n, s, a } sDer aDer = "Sub" % [ m, n, s, a, sDer, aDer ]
 boundaryDer :: forall x. { a :: GenericExpr x, b :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x -> GenericExpr x
 boundaryDer { n, a, b } aDer = "Boundary" % [ n, a, b, aDer ]
 
+holeTermDer :: forall x. { n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x
+holeTermDer { n, a } = "HoleTerm" % [ n, a ]
+
 -- derivation rules for substitutions
 
 shiftDer :: forall x. { n :: GenericExpr x } -> GenericExpr x
@@ -85,6 +97,9 @@ extendDer { m, n, s, a } sDer aDer = "Extend" % [ m, n, s, a, sDer, aDer ]
 
 composeDer :: forall x. { l :: GenericExpr x, m :: GenericExpr x, n :: GenericExpr x, s :: GenericExpr x, t :: GenericExpr x } -> GenericExpr x -> GenericExpr x -> GenericExpr x
 composeDer { l, m, n, s, t } sDer tDer = "Compose" % [ l, m, n, s, t, sDer, tDer ]
+
+holeSubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x
+holeSubDer { m, n, a } = "HoleSub" % [ m, n, a ]
 
 --------------------------------------------------------------------------------
 -- Propagation Rules
@@ -144,6 +159,7 @@ getIndicesOfDer ("Zero" % [ n ]) = pure { n: sucCtx n, a: zeroTerm }
 getIndicesOfDer ("Lam" % [ n, b, _bDer ]) = pure { n: n, a: lamTerm b }
 getIndicesOfDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: s `subTerm` a }
 getIndicesOfDer ("Boundary" % [ n, _a, b, _aDer ]) = pure { n: n, a: b }
+getIndicesOfDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
 getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der", expr }
 
 --------------------------------------------------------------------------------
@@ -209,12 +225,12 @@ example =
   , rules
   , tests:
       [ let
-          _n = zeroCtx
-          _m = sucCtx _n
-          _s = shiftSub
-          _b = zeroTerm
-          _S = shiftDer { n: _n }
-          _B = zeroDer { n: sucCtx _m }
+          _n = holeCtx
+          _m = holeCtx
+          _s = holeSub
+          _b = holeTerm
+          _S = holeSubDer { m: _m, n: _n, a: _s }
+          _B = holeTermDer { n: sucCtx _m, a: _b }
         in
           { name: "propagate Sub inside Lam"
           , input:
