@@ -92,37 +92,37 @@ composeDer { l, m, n, s, t } sDer tDer = "Compose" % [ l, m, n, s, t, sDer, tDer
 
 rules :: Array Rule
 rules =
-  [ {- let
-    _n = me "n"
-    _m = me "m"
-    _s = me "s"
-    _b = me "b"
-    _S = me "S"
-    _B = me "B"
-  in
-    RS.Rule
-      { name: "[s] (λ b) ~~> λ [(↑ ∘ s) ∙ zero] b"
-      , input:
-          subDer { m: _m, n: _n, s: _s, a: lamTerm (_b) }
-            (_S)
-            ( lamDer { n: _m, b: _b }
-                (_B)
-            )
-      , output:
-          boundaryDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
-            ( lamDer ?a
-                ( subDer ?a
-                    ( extendDer ?a
-                        ( composeDer ?a
-                            (shiftDer ?a)
-                            (_S)
-                        )
-                        ?a
-                    )
-                    (zeroDer ?a)
-                )
-            )
-      } -}
+  [ let
+      _n = me "n"
+      _m = me "m"
+      _s = me "s"
+      _b = me "b"
+      _S = me "S"
+      _B = me "B"
+    in
+      RS.Rule
+        { name: "[s] (λ b) ~~> λ [(↑ ∘ s) ⋅ zero] b"
+        , input:
+            subDer { m: _m, n: _n, s: _s, a: lamTerm _b }
+              _S
+              ( lamDer { n: _m, b: _b }
+                  _B
+              )
+        , output:
+            boundaryDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
+              ( lamDer { n: _n, b: subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b }
+                  ( subDer { m: sucCtx _m, n: sucCtx _n, s: (shiftSub `composeSub` _s) `extendSub` zeroTerm, a: _b }
+                      ( extendDer { m: _m, n: sucCtx _n, s: shiftSub `composeSub` _s, a: zeroTerm }
+                          ( composeDer { l: _n, m: _n, n: sucCtx _n, s: shiftSub, t: _s }
+                              (shiftDer { n: _n })
+                              _S
+                          )
+                          (zeroDer { n: _n })
+                      )
+                      _B
+                  )
+              )
+        }
   ]
 
 --------------------------------------------------------------------------------
@@ -207,6 +207,37 @@ example :: Example
 example =
   { name: "ISLC-0.2.2"
   , rules
-  , tests: []
+  , tests:
+      [ let
+          _n = zeroCtx
+          _m = sucCtx _n
+          _s = shiftSub
+          _b = zeroTerm
+          _S = shiftDer { n: _n }
+          _B = zeroDer { n: sucCtx _m }
+        in
+          { name: "propagate Sub inside Lam"
+          , input:
+              subDer { m: _m, n: _n, s: _s, a: lamTerm _b }
+                _S
+                ( lamDer { n: _m, b: _b }
+                    _B
+                )
+          , output:
+              boundaryDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
+                ( lamDer { n: _n, b: subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b }
+                    ( subDer { m: sucCtx _m, n: sucCtx _n, s: (shiftSub `composeSub` _s) `extendSub` zeroTerm, a: _b }
+                        ( extendDer { m: _m, n: sucCtx _n, s: shiftSub `composeSub` _s, a: zeroTerm }
+                            ( composeDer { l: _n, m: _n, n: sucCtx _n, s: shiftSub, t: _s }
+                                (shiftDer { n: _n })
+                                _S
+                            )
+                            (zeroDer { n: _n })
+                        )
+                        _B
+                    )
+                )
+          }
+      ]
   }
 
