@@ -12,7 +12,7 @@ import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap, rmap)
 import Data.Either (Either(..))
 import Data.Eq.Generic (genericEq)
-import Data.Foldable (fold, length, null, traverse_)
+import Data.Foldable (fold, foldl, length, null, traverse_)
 import Data.Generic.Rep (class Generic)
 import Data.Lens (view, (.=))
 import Data.Lens.At (at)
@@ -23,6 +23,8 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe')
 import Data.Ord.Generic (genericCompare)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (uncurry)
@@ -66,6 +68,13 @@ asExpr (Expr a es) = a /\ es
 
 -- | An abstract expression, which CAN contain metavariables.
 type AbsExpr = GenericExpr MetaVar
+
+collectMetas :: forall x a. Ord x => GenericExpr x a -> Set x
+collectMetas = collectMetas' Set.empty
+
+collectMetas' :: forall x a. Ord x => Set x -> GenericExpr x a -> Set x
+collectMetas' vs (MetaExpr v) = Set.insert v vs
+collectMetas' vs (Expr a es) = foldl collectMetas' vs es
 
 data GenericExpr x a
   = MetaExpr x
@@ -192,6 +201,7 @@ unifyMeta
   -> AbsExpr a
   -> m Unit
 unifyMeta x e = do
+  when (Set.member x (collectMetas e)) $ throwError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
   gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
     Nothing -> prop (Proxy @"sigma") <<< at x .= Just e
     Just e' -> unify e e'
