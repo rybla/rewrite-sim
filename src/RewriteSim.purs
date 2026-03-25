@@ -79,10 +79,10 @@ derive instance Bifunctor GenericExpr
 
 derive instance Functor Expr
 
-instance Eq a => Eq (Expr a) where
+instance (Eq x, Eq a) => Eq (GenericExpr x a) where
   eq x = genericEq x
 
-instance Show a => Show (Expr a) where
+instance (Show x, Show a) => Show (GenericExpr x a) where
   show x = genericShow x
 
 me :: forall a. String -> AbsExpr a

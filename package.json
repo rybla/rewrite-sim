@@ -4,14 +4,13 @@
   "devDependencies": {
     "@types/bun": "latest",
     "gh-pages": "^6.3.0",
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "esbuild": "^0.24.0",
+    "purescript": "^0.15.16-4",
+    "spago": "^0.93.41"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "dependencies": {
-    "esbuild": "^0.24.0",
-    "purescript": "^0.15.16-4",
-    "spago": "^0.93.41"
-  }
+  "dependencies": {}
 }

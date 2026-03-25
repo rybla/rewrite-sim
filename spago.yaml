@@ -1,9 +1,10 @@
 package:
-  name: template-purescript-halogen-webapp
+  name: rewrite-sim
   dependencies:
     - aff
     - arrays
     - console
+    - debug
     - effect
     - halogen
     - lists
@@ -14,6 +15,7 @@ package:
     - spec
     - spec-node
     - transformers
+    - variant
   test:
     main: Test.Main
     dependencies: []

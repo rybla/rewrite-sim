@@ -7,10 +7,11 @@ import Control.Monad.Reader (runReaderT)
 import Control.Monad.State (runStateT)
 import Control.Monad.Writer (runWriterT)
 import Data.Either (Either(..))
-import Data.Traversable (traverse, traverse_)
+import Data.Traversable (traverse_)
 import Data.Tuple.Nested ((/\))
 import RewriteSim (newNormalizationCtx, newNormalizationEnv, normalize)
 import RewriteSim.Examples (examples)
+import Test.RewriteSim.Example.ISLSCv0d2d2 as Test.RewriteSim.Example.ISLSCv0d2d2
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 
@@ -32,6 +33,7 @@ spec = do
                 )
             # runWriterT
           case result of
-            _ -> pure unit
             (Left _err /\ _env) /\ _trace -> fail $ "Error"
             (Right output /\ _env) /\ _trace -> shouldEqual output test.output
+
+  Test.RewriteSim.Example.ISLSCv0d2d2.spec

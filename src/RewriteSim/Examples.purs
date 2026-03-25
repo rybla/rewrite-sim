@@ -8,14 +8,19 @@ import Data.Tuple.Nested ((/\))
 import RewriteSim.Example.ABC as ABC
 import RewriteSim.Example.Common (Example, ExampleTest, System)
 import RewriteSim.Example.ISLC as ISLC
+import RewriteSim.Example.ISLSCv0d2d2 as ISLSCv0d2d2
 import RewriteSim.Example.LC as LC
 
 examples :: Array Example
 examples =
-  [ LC.example
-  , ISLC.example
-  , ABC.example
-  ]
+  if false then
+    [ LC.example
+    , ABC.example
+    , ISLC.example
+    , ISLSCv0d2d2.example
+    ]
+  else
+    [ ISLSCv0d2d2.example ]
 
 exampleExprs :: Map String (Array ExampleTest)
 exampleExprs = examples
