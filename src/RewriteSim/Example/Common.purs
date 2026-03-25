@@ -23,3 +23,6 @@ type ExampleTest =
   , input :: Expr
   , output :: Expr
   }
+
+me :: String -> GenericExpr RS.MetaVar
+me = RS.me
