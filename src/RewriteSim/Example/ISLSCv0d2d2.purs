@@ -2,17 +2,13 @@ module RewriteSim.Example.ISLSCv0d2d2 where
 
 import Prelude hiding (zero)
 
-import Control.Applicative (pure)
 import Control.Monad.Error.Class (class MonadError, throwError)
-import Data.Maybe (Maybe)
-import Data.Unfoldable (none)
 import Data.Variant (Variant)
 import Data.Variant as Variant
-import Debug as Debug
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim ((%))
 import RewriteSim as RS
-import RewriteSim.Example.Common (Example, Expr, GenericExpr, Rule, me)
+import RewriteSim.Example.Common (Example, GenericExpr, Rule, me)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -75,14 +71,20 @@ topDer aDer = "Top" % [ aDer ]
 zeroDer :: forall x. { n :: GenericExpr x } -> GenericExpr x
 zeroDer { n } = "Zero" % [ n ]
 
-lamDer :: forall x. { b :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x -> GenericExpr x
+lamDer :: forall x. { n :: GenericExpr x, b :: GenericExpr x } -> GenericExpr x -> GenericExpr x
 lamDer { n, b } bDer = "Lam" % [ n, b, bDer ]
+
+appDer :: forall x. { n :: GenericExpr x, f :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x -> GenericExpr x -> GenericExpr x
+appDer { n, f, a } fDer aDer = "App" % [ n, f, a, fDer, aDer ]
 
 subDer :: forall x. { a :: GenericExpr x, m :: GenericExpr x, n :: GenericExpr x, s :: GenericExpr x } -> GenericExpr x -> GenericExpr x -> GenericExpr x
 subDer { m, n, s, a } sDer aDer = "Sub" % [ m, n, s, a, sDer, aDer ]
 
-boundaryDer :: forall x. { a :: GenericExpr x, b :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x -> GenericExpr x
-boundaryDer { n, a, b } aDer = "Boundary" % [ n, a, b, aDer ]
+boundaryTermDer :: forall x. { a :: GenericExpr x, b :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x -> GenericExpr x
+boundaryTermDer { n, a, b } aDer = "BoundaryTerm" % [ n, a, b, aDer ]
+
+boundarySubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, t :: GenericExpr x, s :: GenericExpr x } -> GenericExpr x -> GenericExpr x
+boundarySubDer { m, n, t, s } sDer = "BoundaryTerm" % [ m, n, t, s, sDer ]
 
 holeTermDer :: forall x. { n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x
 holeTermDer { n, a } = "HoleTerm" % [ n, a ]
@@ -96,7 +98,7 @@ extendDer :: forall x. { a :: GenericExpr x, m :: GenericExpr x, n :: GenericExp
 extendDer { m, n, s, a } sDer aDer = "Extend" % [ m, n, s, a, sDer, aDer ]
 
 composeDer :: forall x. { l :: GenericExpr x, m :: GenericExpr x, n :: GenericExpr x, s :: GenericExpr x, t :: GenericExpr x } -> GenericExpr x -> GenericExpr x -> GenericExpr x
-composeDer { l, m, n, s, t } sDer tDer = "Compose" % [ l, m, n, s, t, sDer, tDer ]
+composeDer { l, m, n, t, s } sDer tDer = "Compose" % [ l, m, n, t, s, sDer, tDer ]
 
 holeSubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x
 holeSubDer { m, n, a } = "HoleSub" % [ m, n, a ]
@@ -107,7 +109,10 @@ holeSubDer { m, n, a } = "HoleSub" % [ m, n, a ]
 
 rules :: Array Rule
 rules =
-  [ let
+  [ ----------------------------------------------------------------------------
+    -- Substitution Propagation Rules
+    ----------------------------------------------------------------------------
+    let
       _n = me "n"
       _m = me "m"
       _s = me "s"
@@ -124,7 +129,7 @@ rules =
                   _B
               )
         , output:
-            boundaryDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
+            boundaryTermDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
               ( lamDer { n: _n, b: subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b }
                   ( subDer { m: sucCtx _m, n: sucCtx _n, s: (shiftSub `composeSub` _s) `extendSub` zeroTerm, a: _b }
                       ( extendDer { m: _m, n: sucCtx _n, s: shiftSub `composeSub` _s, a: zeroTerm }
@@ -138,6 +143,179 @@ rules =
                   )
               )
         }
+  , let
+      _n = me "n"
+      _m = me "m"
+      _s = me "s"
+      _f = me "f"
+      _a = me "a"
+      _S = me "S"
+      _F = me "F"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "[s] (f a) ~~> [s] f [s] a"
+        , input:
+            subDer { m: _m, n: _n, s: _s, a: appTerm _f _a }
+              _S
+              ( appDer { n: _m, f: _f, a: _a }
+                  _F
+                  _A
+              )
+        , output:
+            boundaryTermDer { n: _n, a: appTerm (subTerm _s _f) (subTerm _s _a), b: subTerm _s (appTerm _f _a) }
+              ( appDer { n: _n, f: subTerm _s _f, a: subTerm _s _a }
+                  ( subDer { m: _m, n: _n, s: _s, a: _f }
+                      _S
+                      _F
+                  )
+                  ( subDer { m: _m, n: _n, s: _s, a: _a }
+                      _S
+                      _A
+                  )
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _a = me "a"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "[s ⋅ a] zero ~~> a"
+        , input:
+            subDer { m: sucCtx _m, n: _n, s: _s, a: _a }
+              ( extendDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+              (zeroDer { n: _m })
+        , output:
+            boundaryTermDer { n: _n, a: _a, b: subTerm (extendSub _s _a) zeroTerm }
+              _A
+
+        }
+  , let
+      _l = me "l"
+      _m = me "m"
+      _n = me "n"
+      _t = me "t"
+      _s = me "s"
+      _a = me "a"
+      _T = me "T"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "[t] [s] a ~~> [t ∘ s] a"
+        , input:
+            subDer { m: _m, n: _n, s: _t, a: subTerm _s _a }
+              _T
+              ( subDer { m: _l, n: _m, s: _s, a: _a }
+                  _S
+                  _A
+              )
+        , output:
+            boundaryTermDer { n: _n, a: subTerm (composeSub _t _s) _a, b: subTerm _t (subTerm _s _a) }
+              ( subDer { m: _l, n: _n, s: composeSub _t _s, a: _a }
+                  ( composeDer { l: _l, m: _m, n: _n, t: _t, s: _s }
+                      _T
+                      _S
+                  )
+                  _A
+              )
+        }
+  , let
+      _k = me "k"
+      _l = me "l"
+      _m = me "m"
+      _n = me "n"
+      _u = me "u"
+      _t = me "t"
+      _s = me "s"
+      _U = me "U"
+      _T = me "T"
+      _S = me "S"
+    in
+      RS.Rule
+        { name: "u ∘ (t ∘ s) ~~> (u ∘ t) ∘ s"
+        , input:
+            composeDer { l: _k, m: _m, n: _n, t: _u, s: composeSub _t _s }
+              _U
+              ( composeDer { l: _k, m: _l, n: _m, t: _t, s: _s }
+                  _T
+                  _S
+              )
+        , output:
+            boundarySubDer { m: _k, n: _n, t: composeSub (composeSub _u _t) _s, s: composeSub _u (composeSub _t _s) }
+              ( composeDer { l: _k, m: _l, n: _n, t: composeSub _u _t, s: _s }
+                  ( composeDer { l: _m, m: _m, n: _n, t: _u, s: _t }
+                      _U
+                      _T
+                  )
+                  _S
+              )
+        }
+  , let
+      _l = me "l"
+      _m = me "m"
+      _n = me "n"
+      _t = me "t"
+      _s = me "s"
+      _a = me "a"
+      _T = me "T"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "t ∘ s ⋅ a ~~> (t ∘ s) ⋅ [t] a"
+        , input:
+            composeDer { l: _m, m: sucCtx _m, n: _n, t: extendSub _s _a, s: shiftSub }
+              _T
+              ( extendDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+        , output:
+            boundarySubDer { m: sucCtx _l, n: _n, t: extendSub (composeSub _t _s) (subTerm _t _a), s: composeSub _t (extendSub _s _a) }
+              ( extendDer { m: _l, n: _n, s: composeSub _t _s, a: subTerm _t _a }
+                  ( composeDer { l: _l, m: _m, n: _n, t: _t, s: _s }
+                      _T
+                      _S
+                  )
+                  ( subDer { m: _m, n: _n, s: _t, a: _a }
+                      _T
+                      _A
+                  )
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _a = me "a"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "(s ⋅ a) ∘ ↑ ~~> s"
+        , input:
+            composeDer { l: _m, m: sucCtx _m, n: _n, t: shiftSub, s: extendSub _s _a }
+              ( extendDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+              (shiftDer { n: _m })
+        , output:
+            boundarySubDer { m: _m, n: _n, t: _s, s: composeSub (extendSub _s _a) shiftSub }
+              _S
+        }
+  ----------------------------------------------------------------------------
+  -- Boundary Propagation Rules
+  ----------------------------------------------------------------------------
+  -- TODO
   ]
 
 --------------------------------------------------------------------------------
@@ -157,7 +335,8 @@ getIndicesOfDer
 getIndicesOfDer (RS.MetaExpr var) = throwError $ Variant.inj (Proxy @"meta") { sort: "Der", var }
 getIndicesOfDer ("Zero" % [ n ]) = pure { n: sucCtx n, a: zeroTerm }
 getIndicesOfDer ("Lam" % [ n, b, _bDer ]) = pure { n: n, a: lamTerm b }
-getIndicesOfDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: s `subTerm` a }
+getIndicesOfDer ("App" % [ n, f, a, _fDer, _aDer ]) = pure { n: n, a: appTerm f a }
+getIndicesOfDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: subTerm s a }
 getIndicesOfDer ("Boundary" % [ n, _a, b, _aDer ]) = pure { n: n, a: b }
 getIndicesOfDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
 getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der", expr }
@@ -211,7 +390,7 @@ oneDer' { n } =
 
 twoDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
 twoDer' { n } =
-  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: shiftSub `subTerm` zeroTerm }
+  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
     (shiftDer { n: sucCtx (sucCtx n) })
     (oneDer' { n: n })
 
@@ -240,7 +419,7 @@ example =
                     _B
                 )
           , output:
-              boundaryDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
+              boundaryTermDer { n: _n, a: lamTerm (subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b), b: subTerm _s (lamTerm _b) }
                 ( lamDer { n: _n, b: subTerm ((shiftSub `composeSub` _s) `extendSub` zeroTerm) _b }
                     ( subDer { m: sucCtx _m, n: sucCtx _n, s: (shiftSub `composeSub` _s) `extendSub` zeroTerm, a: _b }
                         ( extendDer { m: _m, n: sucCtx _n, s: shiftSub `composeSub` _s, a: zeroTerm }
