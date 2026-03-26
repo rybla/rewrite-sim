@@ -58,6 +58,82 @@ holeSub :: forall x. GenericExpr x
 holeSub = "holeSub" % []
 
 --------------------------------------------------------------------------------
+-- meta-functions
+--------------------------------------------------------------------------------
+
+type ErrorRow x =
+  ( invalid :: { sort :: String, expr :: GenericExpr x }
+  , meta :: { sort :: String, var :: x }
+  )
+
+getIndicesOfDer
+  :: forall m x
+   . MonadError (Variant (ErrorRow x)) m
+  => GenericExpr x
+  -> m { n :: GenericExpr x, a :: GenericExpr x }
+getIndicesOfDer (RS.MetaExpr var) = throwError $ Variant.inj (Proxy @"meta") { sort: "Der", var }
+getIndicesOfDer ("Zero" % [ n ]) = pure { n: sucCtx n, a: zeroTerm }
+getIndicesOfDer ("Lam" % [ n, b, _bDer ]) = pure { n: n, a: lamTerm b }
+getIndicesOfDer ("App" % [ n, f, a, _fDer, _aDer ]) = pure { n: n, a: appTerm f a }
+getIndicesOfDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: subTerm s a }
+getIndicesOfDer ("Boundary" % [ n, _a, b, _aDer ]) = pure { n: n, a: b }
+getIndicesOfDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
+getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der", expr }
+
+--------------------------------------------------------------------------------
+-- Example Derivations
+--------------------------------------------------------------------------------
+
+shiftDerFn
+  :: forall m x
+   . MonadError (Variant (ErrorRow x)) m
+  => Show x
+  => GenericExpr x
+  -> m (GenericExpr x)
+shiftDerFn der = do
+  { n, a } <- getIndicesOfDer der
+  pure $
+    subDer { m: n, n: sucCtx n, s: shiftSub, a: a }
+      (shiftDer { n: n })
+      der
+
+deBruijn :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => Int -> { n :: GenericExpr x } -> m (GenericExpr x)
+deBruijn i { n } =
+  if i < 0 then unsafeCrashWith $ "deBruijn with negative index: " <> show i
+  else if i == 0 then
+    pure $ zeroDer { n }
+  else
+    shiftDerFn =<< deBruijn (i - 1) { n }
+
+oneDer
+  :: forall m @x
+   . MonadError (Variant (ErrorRow x)) m
+  => Show x
+  => { n :: GenericExpr x }
+  -> m (GenericExpr x)
+oneDer { n } = shiftDerFn (zeroDer { n: n })
+
+twoDer
+  :: forall m @x
+   . MonadError (Variant (ErrorRow x)) m
+  => Show x
+  => { n :: GenericExpr x }
+  -> m (GenericExpr x)
+twoDer { n } = shiftDerFn =<< oneDer { n: n }
+
+oneDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
+oneDer' { n } =
+  subDer { m: sucCtx n, n: sucCtx (sucCtx n), s: shiftSub, a: zeroTerm }
+    (shiftDer { n: sucCtx n })
+    (zeroDer { n: n })
+
+twoDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
+twoDer' { n } =
+  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
+    (shiftDer { n: sucCtx (sucCtx n) })
+    (oneDer' { n: n })
+
+--------------------------------------------------------------------------------
 -- Derivation Rules
 --------------------------------------------------------------------------------
 
@@ -494,82 +570,6 @@ rules =
               _A
         }
   ]
-
---------------------------------------------------------------------------------
--- meta-functions
---------------------------------------------------------------------------------
-
-type ErrorRow x =
-  ( invalid :: { sort :: String, expr :: GenericExpr x }
-  , meta :: { sort :: String, var :: x }
-  )
-
-getIndicesOfDer
-  :: forall m x
-   . MonadError (Variant (ErrorRow x)) m
-  => GenericExpr x
-  -> m { n :: GenericExpr x, a :: GenericExpr x }
-getIndicesOfDer (RS.MetaExpr var) = throwError $ Variant.inj (Proxy @"meta") { sort: "Der", var }
-getIndicesOfDer ("Zero" % [ n ]) = pure { n: sucCtx n, a: zeroTerm }
-getIndicesOfDer ("Lam" % [ n, b, _bDer ]) = pure { n: n, a: lamTerm b }
-getIndicesOfDer ("App" % [ n, f, a, _fDer, _aDer ]) = pure { n: n, a: appTerm f a }
-getIndicesOfDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: subTerm s a }
-getIndicesOfDer ("Boundary" % [ n, _a, b, _aDer ]) = pure { n: n, a: b }
-getIndicesOfDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
-getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der", expr }
-
---------------------------------------------------------------------------------
--- Example Derivations
---------------------------------------------------------------------------------
-
-shiftDerFn
-  :: forall m x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => GenericExpr x
-  -> m (GenericExpr x)
-shiftDerFn der = do
-  { n, a } <- getIndicesOfDer der
-  pure $
-    subDer { m: n, n: sucCtx n, s: shiftSub, a: a }
-      (shiftDer { n: n })
-      der
-
-deBruijn :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => Int -> { n :: GenericExpr x } -> m (GenericExpr x)
-deBruijn i { n } =
-  if i < 0 then unsafeCrashWith $ "deBruijn with negative index: " <> show i
-  else if i == 0 then
-    pure $ zeroDer { n }
-  else
-    shiftDerFn =<< deBruijn (i - 1) { n }
-
-oneDer
-  :: forall m @x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => { n :: GenericExpr x }
-  -> m (GenericExpr x)
-oneDer { n } = shiftDerFn (zeroDer { n: n })
-
-twoDer
-  :: forall m @x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => { n :: GenericExpr x }
-  -> m (GenericExpr x)
-twoDer { n } = shiftDerFn =<< oneDer { n: n }
-
-oneDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
-oneDer' { n } =
-  subDer { m: sucCtx n, n: sucCtx (sucCtx n), s: shiftSub, a: zeroTerm }
-    (shiftDer { n: sucCtx n })
-    (zeroDer { n: n })
-
-twoDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
-twoDer' { n } =
-  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
-    (shiftDer { n: sucCtx (sucCtx n) })
-    (oneDer' { n: n })
 
 --------------------------------------------------------------------------------
 -- Example
