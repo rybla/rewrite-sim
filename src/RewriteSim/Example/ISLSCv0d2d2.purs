@@ -11,7 +11,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (mv, (%))
+import RewriteSim (MetaVar, mv, (%))
 import RewriteSim as RS
 import RewriteSim.Example.Common (Example, GenericExpr, Rule, me)
 import RewriteSim.Utilities (apply2M, applyM, runIdentity)
@@ -35,8 +35,8 @@ appTerm f a = "app" % [ f, a ]
 subTerm :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
 subTerm s a = "sub" % [ s, a ]
 
-holeTerm :: forall x. GenericExpr x
-holeTerm = "holeTerm" % []
+holeTerm :: forall x. String -> GenericExpr x
+holeTerm name = "holeTerm" % [ name % [] ]
 
 -- contexts
 
@@ -46,8 +46,8 @@ zeroCtx = "zeroCtx" % []
 sucCtx :: forall x. GenericExpr x -> GenericExpr x
 sucCtx n = "sucCtx" % [ n ]
 
-holeCtx :: forall x. GenericExpr x
-holeCtx = "holeCtx" % []
+holeCtx :: forall x. String -> GenericExpr x
+holeCtx name = "holeCtx" % [ name % [] ]
 
 -- substitutions
 
@@ -60,8 +60,8 @@ extendSub s a = "extend" % [ s, a ]
 composeSub :: forall x. GenericExpr x -> GenericExpr x -> GenericExpr x
 composeSub s t = "compose" % [ s, t ]
 
-holeSub :: forall x. GenericExpr x
-holeSub = "holeSub" % []
+holeSub :: forall x. String -> GenericExpr x
+holeSub name = "holeSub" % [ name % [] ]
 
 --------------------------------------------------------------------------------
 -- Derivation Rules
@@ -89,8 +89,8 @@ subDer { m, n, s, a } sDer aDer = "Sub" % [ m, n, s, a, sDer, aDer ]
 boundaryTermDer :: forall x. { a :: GenericExpr x, b :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x -> GenericExpr x
 boundaryTermDer { n, a, b } aDer = "BoundaryTerm" % [ n, a, b, aDer ]
 
-holeTermDer :: forall x. { n :: GenericExpr x } -> GenericExpr x
-holeTermDer { n } = "HoleTerm" % [ n, holeTerm ]
+holeTermDer :: forall x. String -> { n :: GenericExpr x } -> GenericExpr x
+holeTermDer name { n } = "HoleTerm" % [ n, holeTerm name ]
 
 -- derivation rules for substitutions
 
@@ -106,8 +106,8 @@ composeDer { l, m, n, t, s } sDer tDer = "Compose" % [ l, m, n, t, s, sDer, tDer
 boundarySubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, t :: GenericExpr x, s :: GenericExpr x } -> GenericExpr x -> GenericExpr x
 boundarySubDer { m, n, t, s } sDer = "BoundarySub" % [ m, n, t, s, sDer ]
 
-holeSubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x
-holeSubDer { m, n } = "HoleSub" % [ m, n, holeSub ]
+holeSubDer :: forall x. String -> { m :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x
+holeSubDer name { m, n } = "HoleSub" % [ m, n, holeSub name ]
 
 --------------------------------------------------------------------------------
 -- mets-functions
@@ -190,16 +190,19 @@ getIndicesOfTermDer expr = throwError_invalid { sort: "TermDer", expr, reason: "
 zeroDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
 zeroDerM { n } = pure $ pure $ zeroDer { n }
 
-lamDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
-lamDerM bDer = do
+lamDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
+lamDerM' bDer = do
   { n: sn, a: b } <- getIndicesOfMetaGenericTermDerExpr bDer
   n <- case sn of
     "sucCtx" % [ n ] -> pure n
     _ -> throwError_invalid { sort: "TermDer", expr: fromMetaGenericTermDerExpr bDer, reason: "In a Lam, the context of body B, " <> show sn <> " is not a successor" }
   pure $ pure $ lamDer { n, b } (fromMetaGenericTermDerExpr bDer)
 
-appDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
-appDerM fDer aDer = do
+lamDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x)
+lamDerM = applyM lamDerM'
+
+appDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
+appDerM' fDer aDer = do
   { n: n_f, a: f } <- getIndicesOfMetaGenericTermDerExpr fDer
   { n: n_a, a: a } <- getIndicesOfMetaGenericTermDerExpr aDer
   let n = n_a
@@ -207,8 +210,11 @@ appDerM fDer aDer = do
   unless (n_f == n_a) $ throwError_invalid { sort: "TermDer", expr: term, reason: "In an App, the context of F, " <> show n_f <> " is different from the context of A, " <> show n_a }
   pure $ pure term
 
-subDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
-subDerM sDer aDer = do
+appDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x)
+appDerM = apply2M appDerM'
+
+subDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
+subDerM' sDer aDer = do
   { m: m_s, n, s } <- getIndicesOfMetaGenericSubDerExpr sDer
   { n: m_a, a } <- getIndicesOfMetaGenericTermDerExpr aDer
   let m = m_s
@@ -216,21 +222,30 @@ subDerM sDer aDer = do
   unless (m_s == m_a) $ throwError_invalid { sort: "TermDer", expr: term, reason: "In a Sub, the input context of S, " <> show m_s <> " is different from the context of A, " <> show m_a }
   pure $ pure term
 
-boundaryTermDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { b :: GenericExpr x } -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
-boundaryTermDerM { b } aDer = do
+subDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericSubDerExpr x) -> m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x)
+subDerM = apply2M subDerM'
+
+boundaryTermDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { b :: GenericExpr x } -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
+boundaryTermDerM' { b } aDer = do
   { n, a } <- getIndicesOfMetaGenericTermDerExpr aDer
   pure $ pure $ boundaryTermDer { n, a, b } (fromMetaGenericTermDerExpr aDer)
 
-holeTermDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
-holeTermDerM { n } = pure $ pure $ holeTermDer { n }
+boundaryTermDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { b :: GenericExpr x } -> m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x)
+boundaryTermDerM { b } = applyM (boundaryTermDerM' { b })
+
+holeTermDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => String -> { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
+holeTermDerM name { n } = pure $ pure $ holeTermDer name { n }
+
+metaTermDerM :: forall m. MonadThrow (Variant (ErrorRow MetaVar)) m => String -> { n :: GenericExpr MetaVar, a :: GenericExpr MetaVar } -> m (MetaGenericTermDerExpr MetaVar)
+metaTermDerM x { n, a } = pure $ Left $ (mv x) /\ { n, a }
 
 -- substitutions
 
 shiftDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericSubDerExpr x)
 shiftDerM { n } = pure $ pure $ shiftDer { n }
 
-extendDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericSubDerExpr x)
-extendDerM sDer aDer = do
+extendDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericSubDerExpr x)
+extendDerM' sDer aDer = do
   { m: m, n: n_s, s } <- getIndicesOfMetaGenericSubDerExpr sDer
   { n: n_a, a } <- getIndicesOfMetaGenericTermDerExpr aDer
   let n = n_s
@@ -238,8 +253,11 @@ extendDerM sDer aDer = do
   unless (n_s == n_a) $ throwError_invalid { sort: "SubDer", expr: sub, reason: "The output context of S, " <> show n_s <> " is different from the context of A, " <> show n_a }
   pure $ pure $ sub
 
-composeDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
-composeDerM tDer sDer = do
+extendDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericSubDerExpr x) -> m (MetaGenericTermDerExpr x) -> m (MetaGenericSubDerExpr x)
+extendDerM = apply2M extendDerM'
+
+composeDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
+composeDerM' tDer sDer = do
   { m: m_t, n: n, s: t } <- getIndicesOfMetaGenericSubDerExpr tDer
   { m: l, n: m_s, s } <- getIndicesOfMetaGenericSubDerExpr sDer
   let m = m_t
@@ -247,21 +265,33 @@ composeDerM tDer sDer = do
   unless (m_t == m_s) $ throwError_invalid { sort: "SubDer", expr: sub, reason: "The output context of T, " <> show m_t <> " is different from the input context of S, " <> show m_s }
   pure $ pure sub
 
-boundarySubDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { s :: GenericExpr x } -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
-boundarySubDerM { s } tDer = do
+composeDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericSubDerExpr x) -> m (MetaGenericSubDerExpr x) -> m (MetaGenericSubDerExpr x)
+composeDerM = apply2M composeDerM'
+
+boundarySubDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { s :: GenericExpr x } -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
+boundarySubDerM' { s } tDer = do
   { m, n, s: t } <- getIndicesOfMetaGenericSubDerExpr tDer
   let sub = boundarySubDer { m, n, t, s } (fromMetaGenericSubDerExpr tDer)
   pure $ pure $ sub
 
-holeSubDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { m :: GenericExpr x, n :: GenericExpr x } -> m (MetaGenericSubDerExpr x)
-holeSubDerM { m, n } = pure $ pure $ holeSubDer { m, n }
+boundarySubDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { s :: GenericExpr x } -> m (MetaGenericSubDerExpr x) -> m (MetaGenericSubDerExpr x)
+boundarySubDerM { s } = applyM (boundarySubDerM' { s })
+
+holeSubDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => String -> { m :: GenericExpr x, n :: GenericExpr x } -> m (MetaGenericSubDerExpr x)
+holeSubDerM name { m, n } = pure $ pure $ holeSubDer name { m, n }
+
+metaSubDerM :: forall m. MonadThrow (Variant (ErrorRow MetaVar)) m => String -> { m :: GenericExpr MetaVar, n :: GenericExpr MetaVar, s :: GenericExpr MetaVar } -> m (MetaGenericSubDerExpr MetaVar)
+metaSubDerM x { m, n, s } = pure $ Left $ (mv x) /\ { m, n, s }
 
 -- top 
 
-topDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
-topDerM aDer = do
+topDerM' :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
+topDerM' aDer = do
   { n, a } <- getIndicesOfMetaGenericTermDerExpr aDer
   pure $ pure $ "Top" % [ n, a, fromMetaGenericTermDerExpr aDer ]
+
+topDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => m (MetaGenericTermDerExpr x) -> m (MetaGenericTermDerExpr x)
+topDerM = applyM topDerM'
 
 --------------------------------------------------------------------------------
 -- Example Derivations
@@ -302,10 +332,10 @@ twoDer_v0 { n } =
     (oneDer_v0 { n })
 
 oneDer_v2 :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
-oneDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n })
+oneDer_v2 { n } = subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n })
 
 twoDer_v2 :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
-twoDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx (sucCtx n) }) (apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n }))
+twoDer_v2 { n } = subDerM (shiftDerM { n: sucCtx (sucCtx n) }) (subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n }))
 
 --------------------------------------------------------------------------------
 
@@ -674,47 +704,48 @@ rules =
                   _A
               )
         }
-  -- , let
-  --     _m = me "m"
-  --     _n = me "n"
-  --     _s = me "s"
-  --     _s' = me "s'"
-  --     _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
-  --     _a = me "a"
-  --     _A = pure $ Left $ mv "A" /\ { n: _n, a: _a }
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Extend at a"
-  --       , input: runMetaGenericSubDerExprM $
-  --           apply2M extendDerM (applyM (boundarySubDerM { s: _s' }) _S) _A
-  --       , output: runMetaGenericSubDerExprM $
-  --           applyM (boundarySubDerM { s: _s' })
-  --             (apply2M extendDerM _S _A)
-  --       }
-  -- , let
-  --     _m = me "m"
-  --     _n = me "n"
-  --     _t = me "t"
-  --     _s = me "s"
-  --     _s' = me "s'"
-  --     _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
-  --     _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Compose at t"
-  --       , input: runMetaGenericSubDerExprM $
-  --           apply2M composeDerM
-  --             _T
-  --             ( applyM (boundarySubDerM { s: _s' })
-  --                 _S
-  --             )
-  --       , output: runMetaGenericSubDerExprM $
-  --           applyM (boundarySubDerM { s: composeSub _t _s' })
-  --             ( apply2M composeDerM
-  --                 _T
-  --                 _S
-  --             )
-  --       }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _s' = me "s'"
+      _S = metaSubDerM "S" { m: _m, n: _n, s: _s }
+      _a = me "a"
+      _A = metaTermDerM "A" { n: _n, a: _a }
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Extend at a"
+        , input: runMetaGenericSubDerExprM $
+            extendDerM (boundarySubDerM { s: _s' } _S) _A
+        , output: runMetaGenericSubDerExprM $
+            boundarySubDerM { s: _s' }
+              (extendDerM _S _A)
+        }
+  , let
+      _l = me "l"
+      _m = me "m"
+      _n = me "n"
+      _t = me "t"
+      _s = me "s"
+      _s' = me "s'"
+      _T = metaSubDerM "T" { m: _m, n: _n, s: _t }
+      _S = metaSubDerM "S" { m: _l, n: _m, s: _s }
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Compose at t"
+        , input: runMetaGenericSubDerExprM $
+            composeDerM
+              _T
+              ( boundarySubDerM { s: _s' }
+                  _S
+              )
+        , output: runMetaGenericSubDerExprM $
+            boundarySubDerM { s: composeSub _t _s' }
+              ( composeDerM
+                  _T
+                  _S
+              )
+        }
   , let
       _l = me "l"
       _m = me "m"
@@ -722,20 +753,20 @@ rules =
       _t = me "t"
       _t' = me "t'"
       _s = me "s"
-      _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
-      _S = pure $ Left $ mv "S" /\ { m: _l, n: _m, s: _s }
+      _T = metaSubDerM "T" { m: _m, n: _n, s: _t }
+      _S = metaSubDerM "S" { m: _l, n: _m, s: _s }
     in
       RS.Rule
         { name: "propagate BoundaryTerm over Compose at s"
         , input: runMetaGenericSubDerExprM $
-            apply2M composeDerM
-              ( applyM (boundarySubDerM { s: _t' })
+            composeDerM
+              ( boundarySubDerM { s: _t' }
                   _T
               )
               _S
         , output: runMetaGenericSubDerExprM $
-            applyM (boundarySubDerM { s: composeSub _t' _s })
-              ( apply2M composeDerM
+            (boundarySubDerM { s: composeSub _t' _s })
+              ( composeDerM
                   _T
                   _S
               )
@@ -768,13 +799,13 @@ example =
   { name: "ISLC-0.2.2"
   , rules
   , tests:
-      [ let
-          _n = holeCtx
-          _m = holeCtx
-          _s = holeSub
-          _b = holeTerm
-          _S = holeSubDer { m: _m, n: _n }
-          _B = holeTermDer { n: sucCtx _m }
+      [ {- let
+          _n = holeCtx "n"
+          _m = holeCtx "m"
+          _s = holeSub "s"
+          _b = holeTerm "b"
+          _S = holeSubDer "S" { m: _m, n: _n }
+          _B = holeTermDer "B" { n: sucCtx _m }
         in
           { name: "propagate Sub inside Lam"
           , input:
@@ -797,6 +828,29 @@ example =
                         _B
                     )
                 )
+          } 
+      , -} let
+          _m = holeCtx "m"
+          _n = holeCtx "n"
+          _s = holeSub "s"
+          _S = holeSubDerM "S" { m: _m, n: _n }
+          _b = holeTerm "b"
+          _B = holeTermDerM "B" { n: sucCtx _m }
+        in
+          { name: "propagate Sub inside Lam"
+          , input: runMetaGenericTermDerExprM
+              ( topDerM
+                  (subDerM _S (lamDerM _B))
+              )
+          , output: runMetaGenericTermDerExprM
+              ( topDerM
+                  ( lamDerM
+                      ( subDerM
+                          (extendDerM (composeDerM (shiftDerM { n: _n }) _S) (zeroDerM { n: _n }))
+                          _B
+                      )
+                  )
+              )
           }
       ]
   }
