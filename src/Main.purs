@@ -13,7 +13,6 @@ import Data.List (List)
 import Data.List as List
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe')
-import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Data.Unfoldable (none)
 import Effect (Effect)

@@ -11,9 +11,9 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (MetaVar, mv, (%))
+import RewriteSim (mv, (%))
 import RewriteSim as RS
-import RewriteSim.Example.Common (Example, Expr, Rule, GenericExpr, me)
+import RewriteSim.Example.Common (Example, GenericExpr, Rule, me)
 import RewriteSim.Utilities (apply2M, applyM, runIdentity)
 import Type.Proxy (Proxy(..))
 
@@ -104,7 +104,7 @@ composeDer :: forall x. { l :: GenericExpr x, m :: GenericExpr x, n :: GenericEx
 composeDer { l, m, n, t, s } sDer tDer = "Compose" % [ l, m, n, t, s, sDer, tDer ]
 
 boundarySubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, t :: GenericExpr x, s :: GenericExpr x } -> GenericExpr x -> GenericExpr x
-boundarySubDer { m, n, t, s } sDer = "BoundaryTerm" % [ m, n, t, s, sDer ]
+boundarySubDer { m, n, t, s } sDer = "BoundarySub" % [ m, n, t, s, sDer ]
 
 holeSubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x } -> GenericExpr x
 holeSubDer { m, n } = "HoleSub" % [ m, n, holeSub ]
@@ -118,12 +118,14 @@ type ErrorRow x =
   , meta :: MetaError x
   )
 
-type MetaError x = { sort :: String, var :: x }
+type MetaError x = { sort :: String, var :: x, reason :: String }
 
+throwError_meta :: forall m x r a. MonadThrow (Variant (meta :: MetaError x | r)) m => MetaError x -> m a
 throwError_meta = throwError <<< Variant.inj (Proxy @"meta")
 
-type InvalidError x = { sort :: String, expr :: GenericExpr x }
+type InvalidError x = { sort :: String, expr :: GenericExpr x, reason :: String }
 
+throwError_invalid :: forall m x r a. MonadThrow (Variant (invalid :: InvalidError x | r)) m => InvalidError x -> m a
 throwError_invalid = throwError <<< Variant.inj (Proxy @"invalid")
 
 type MetaGenericTermDerExpr x = (x /\ { n :: GenericExpr x, a :: GenericExpr x }) \/ GenericExpr x
@@ -142,9 +144,9 @@ getIndicesOfMetaGenericTermDerExpr (Right ("Zero" % [ n ])) = pure { n: sucCtx n
 getIndicesOfMetaGenericTermDerExpr (Right ("Lam" % [ n, b, _bDer ])) = pure { n: n, a: lamTerm b }
 getIndicesOfMetaGenericTermDerExpr (Right ("App" % [ n, f, a, _fDer, _aDer ])) = pure { n: n, a: appTerm f a }
 getIndicesOfMetaGenericTermDerExpr (Right ("Sub" % [ _m, n, s, a, _sDer, _aDer ])) = pure { n: n, a: subTerm s a }
-getIndicesOfMetaGenericTermDerExpr (Right ("Boundary" % [ n, _a, b, _aDer ])) = pure { n: n, a: b }
+getIndicesOfMetaGenericTermDerExpr (Right ("BoundaryTerm" % [ n, _a, b, _aDer ])) = pure { n: n, a: b }
 getIndicesOfMetaGenericTermDerExpr (Right ("HoleTerm" % [ n, a ])) = pure { n: n, a: a }
-getIndicesOfMetaGenericTermDerExpr (Right expr) = throwError_invalid { sort: "TermDer", expr }
+getIndicesOfMetaGenericTermDerExpr (Right expr) = throwError_invalid { sort: "TermDer", expr, reason: "Invalid expr head for sort" }
 
 type MetaGenericSubDerExpr x = (x /\ { m :: GenericExpr x, n :: GenericExpr x, s :: GenericExpr x }) \/ GenericExpr x
 
@@ -159,24 +161,25 @@ getIndicesOfMetaGenericSubDerExpr
   -> m { m :: GenericExpr x, n :: GenericExpr x, s :: GenericExpr x }
 getIndicesOfMetaGenericSubDerExpr (Left (_ /\ { m, n, s })) = pure { m, n, s }
 getIndicesOfMetaGenericSubDerExpr (Right ("Shift" % [ n ])) = pure { m: n, n: sucCtx n, s: shiftSub }
-getIndicesOfMetaGenericSubDerExpr (Right ("Extend" % [ m, n, s, a ])) = pure { m: sucCtx m, n: n, s: extendSub s a }
-getIndicesOfMetaGenericSubDerExpr (Right ("Compose" % [ l, _m, n, t, s ])) = pure { m: l, n: n, s: composeSub t s }
+getIndicesOfMetaGenericSubDerExpr (Right ("Extend" % [ m, n, s, a, _sDer, _aDer ])) = pure { m: sucCtx m, n: n, s: extendSub s a }
+getIndicesOfMetaGenericSubDerExpr (Right ("Compose" % [ l, _m, n, t, s, _tDer, _sDer ])) = pure { m: l, n: n, s: composeSub t s }
+getIndicesOfMetaGenericSubDerExpr (Right ("BoundarySub" % [ m, n, _t, s, _sDer ])) = pure { m, n, s }
 getIndicesOfMetaGenericSubDerExpr (Right ("HoleSub" % [ m, n, s ])) = pure { m, n, s }
-getIndicesOfMetaGenericSubDerExpr (Right expr) = throwError_invalid { sort: "SubDer", expr }
+getIndicesOfMetaGenericSubDerExpr (Right expr) = throwError_invalid { sort: "SubDer", expr, reason: "Unrecognized expr head for sort" }
 
 getIndicesOfTermDer
   :: forall m x
    . MonadThrow (Variant (ErrorRow x)) m
   => GenericExpr x
   -> m { n :: GenericExpr x, a :: GenericExpr x }
-getIndicesOfTermDer (RS.MetaExpr var) = throwError $ Variant.inj (Proxy @"meta") { sort: "Der", var }
+getIndicesOfTermDer (RS.MetaExpr var) = throwError_meta { sort: "Der", var, reason: "Unexpected MetaExpr" }
 getIndicesOfTermDer ("Zero" % [ n ]) = pure { n: sucCtx n, a: zeroTerm }
 getIndicesOfTermDer ("Lam" % [ n, b, _bDer ]) = pure { n: n, a: lamTerm b }
 getIndicesOfTermDer ("App" % [ n, f, a, _fDer, _aDer ]) = pure { n: n, a: appTerm f a }
 getIndicesOfTermDer ("Sub" % [ _m, n, s, a, _sDer, _aDer ]) = pure { n: n, a: subTerm s a }
 getIndicesOfTermDer ("Boundary" % [ n, _a, b, _aDer ]) = pure { n: n, a: b }
 getIndicesOfTermDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
-getIndicesOfTermDer expr = throwError_invalid { sort: "Der", expr }
+getIndicesOfTermDer expr = throwError_invalid { sort: "TermDer", expr, reason: "Invalid expr head for sort" }
 
 --------------------------------------------------------------------------------
 -- Meta-Derivation Rules
@@ -192,7 +195,7 @@ lamDerM bDer = do
   { n: sn, a: b } <- getIndicesOfMetaGenericTermDerExpr bDer
   n <- case sn of
     "sucCtx" % [ n ] -> pure n
-    _ -> throwError_invalid { sort: "TermDer", expr: fromMetaGenericTermDerExpr bDer }
+    _ -> throwError_invalid { sort: "TermDer", expr: fromMetaGenericTermDerExpr bDer, reason: "In a Lam, the context of body B, " <> show sn <> " is not a successor" }
   pure $ pure $ lamDer { n, b } (fromMetaGenericTermDerExpr bDer)
 
 appDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericTermDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
@@ -201,7 +204,7 @@ appDerM fDer aDer = do
   { n: n_a, a: a } <- getIndicesOfMetaGenericTermDerExpr aDer
   let n = n_a
   let term = appDer { n, f, a } (fromMetaGenericTermDerExpr fDer) (fromMetaGenericTermDerExpr aDer)
-  unless (n_f == n_a) $ throwError_invalid { sort: "TermDer", expr: term }
+  unless (n_f == n_a) $ throwError_invalid { sort: "TermDer", expr: term, reason: "In an App, the context of F, " <> show n_f <> " is different from the context of A, " <> show n_a }
   pure $ pure term
 
 subDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
@@ -210,7 +213,7 @@ subDerM sDer aDer = do
   { n: m_a, a } <- getIndicesOfMetaGenericTermDerExpr aDer
   let m = m_s
   let term = subDer { m, n, s, a } (fromMetaGenericSubDerExpr sDer) (fromMetaGenericTermDerExpr aDer)
-  unless (m_s == m_a) $ throwError_invalid { sort: "TermDer", expr: term }
+  unless (m_s == m_a) $ throwError_invalid { sort: "TermDer", expr: term, reason: "In a Sub, the input context of S, " <> show m_s <> " is different from the context of A, " <> show m_a }
   pure $ pure term
 
 boundaryTermDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { b :: GenericExpr x } -> MetaGenericTermDerExpr x -> m (MetaGenericTermDerExpr x)
@@ -228,20 +231,20 @@ shiftDerM { n } = pure $ pure $ shiftDer { n }
 
 extendDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericTermDerExpr x -> m (MetaGenericSubDerExpr x)
 extendDerM sDer aDer = do
-  { m: m_s, n, s } <- getIndicesOfMetaGenericSubDerExpr sDer
-  { n: m_a, a } <- getIndicesOfMetaGenericTermDerExpr aDer
-  let m = m_s
+  { m: m, n: n_s, s } <- getIndicesOfMetaGenericSubDerExpr sDer
+  { n: n_a, a } <- getIndicesOfMetaGenericTermDerExpr aDer
+  let n = n_s
   let sub = extendDer { m, n, s, a } (fromMetaGenericSubDerExpr sDer) (fromMetaGenericTermDerExpr aDer)
-  unless (m_s == m_a) $ throwError_invalid { sort: "SubDer", expr: sub }
+  unless (n_s == n_a) $ throwError_invalid { sort: "SubDer", expr: sub, reason: "The output context of S, " <> show n_s <> " is different from the context of A, " <> show n_a }
   pure $ pure $ sub
 
 composeDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => MetaGenericSubDerExpr x -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
 composeDerM tDer sDer = do
-  { m: l, n: m_t, s: t } <- getIndicesOfMetaGenericSubDerExpr tDer
-  { m: m_s, n, s } <- getIndicesOfMetaGenericSubDerExpr sDer
+  { m: m_t, n: n, s: t } <- getIndicesOfMetaGenericSubDerExpr tDer
+  { m: l, n: m_s, s } <- getIndicesOfMetaGenericSubDerExpr sDer
   let m = m_t
   let sub = composeDer { l, m, n, t, s } (fromMetaGenericSubDerExpr tDer) (fromMetaGenericSubDerExpr sDer)
-  unless (m_t == m_s) $ throwError_invalid { sort: "SubDer", expr: sub }
+  unless (m_t == m_s) $ throwError_invalid { sort: "SubDer", expr: sub, reason: "The output context of T, " <> show m_t <> " is different from the input context of S, " <> show m_s }
   pure $ pure sub
 
 boundarySubDerM :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { s :: GenericExpr x } -> MetaGenericSubDerExpr x -> m (MetaGenericSubDerExpr x)
@@ -671,55 +674,56 @@ rules =
                   _A
               )
         }
+  -- , let
+  --     _m = me "m"
+  --     _n = me "n"
+  --     _s = me "s"
+  --     _s' = me "s'"
+  --     _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+  --     _a = me "a"
+  --     _A = pure $ Left $ mv "A" /\ { n: _n, a: _a }
+  --   in
+  --     RS.Rule
+  --       { name: "propagate BoundaryTerm over Extend at a"
+  --       , input: runMetaGenericSubDerExprM $
+  --           apply2M extendDerM (applyM (boundarySubDerM { s: _s' }) _S) _A
+  --       , output: runMetaGenericSubDerExprM $
+  --           applyM (boundarySubDerM { s: _s' })
+  --             (apply2M extendDerM _S _A)
+  --       }
+  -- , let
+  --     _m = me "m"
+  --     _n = me "n"
+  --     _t = me "t"
+  --     _s = me "s"
+  --     _s' = me "s'"
+  --     _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
+  --     _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+  --   in
+  --     RS.Rule
+  --       { name: "propagate BoundaryTerm over Compose at t"
+  --       , input: runMetaGenericSubDerExprM $
+  --           apply2M composeDerM
+  --             _T
+  --             ( applyM (boundarySubDerM { s: _s' })
+  --                 _S
+  --             )
+  --       , output: runMetaGenericSubDerExprM $
+  --           applyM (boundarySubDerM { s: composeSub _t _s' })
+  --             ( apply2M composeDerM
+  --                 _T
+  --                 _S
+  --             )
+  --       }
   , let
-      _m = me "m"
-      _n = me "n"
-      _s = me "s"
-      _s' = me "s'"
-      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
-      _a = me "a"
-      _A = pure $ Left $ mv "A" /\ { n: _n, a: _a }
-    in
-      RS.Rule
-        { name: "propagate BoundaryTerm over Extend at a"
-        , input: runMetaGenericSubDerExprM $
-            apply2M extendDerM (applyM (boundarySubDerM { s: _s' }) _S) _A
-        , output: runMetaGenericSubDerExprM $
-            applyM (boundarySubDerM { s: _s' })
-              (apply2M extendDerM _S _A)
-        }
-  , let
-      _m = me "m"
-      _n = me "n"
-      _t = me "t"
-      _s = me "s"
-      _s' = me "s'"
-      _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
-      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
-    in
-      RS.Rule
-        { name: "propagate BoundaryTerm over Compose at t"
-        , input: runMetaGenericSubDerExprM $
-            apply2M composeDerM
-              _T
-              ( applyM (boundarySubDerM { s: _s' })
-                  _S
-              )
-        , output: runMetaGenericSubDerExprM $
-            applyM (boundarySubDerM { s: composeSub _t _s' })
-              ( apply2M composeDerM
-                  _T
-                  _S
-              )
-        }
-  , let
+      _l = me "l"
       _m = me "m"
       _n = me "n"
       _t = me "t"
       _t' = me "t'"
       _s = me "s"
       _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
-      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+      _S = pure $ Left $ mv "S" /\ { m: _l, n: _m, s: _s }
     in
       RS.Rule
         { name: "propagate BoundaryTerm over Compose at s"
