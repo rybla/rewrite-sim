@@ -3,16 +3,18 @@ module RewriteSim.Example.ISLSCv0d2d2 where
 import Prelude hiding (zero)
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Data.Either (Either(..))
+import Control.Monad.Except (ExceptT, runExceptT)
+import Data.Either (Either(..), either)
 import Data.Either.Nested (type (\/))
+import Data.Identity (Identity)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Variant (Variant)
 import Data.Variant as Variant
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim ((%), MetaVar)
+import RewriteSim (MetaVar, mv, (%))
 import RewriteSim as RS
 import RewriteSim.Example.Common (Example, Expr, Rule, GenericExpr, me)
-import RewriteSim.Utilities (apply2M)
+import RewriteSim.Utilities (apply2M, applyM, runIdentity)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -301,6 +303,24 @@ oneDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n })
 
 twoDer_v2 :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
 twoDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx (sucCtx n) }) (apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n }))
+
+--------------------------------------------------------------------------------
+
+runMetaGenericTermDerExprM :: forall x. Show x => Eq x => ExceptT (Variant (ErrorRow x)) Identity (MetaGenericTermDerExpr x) -> GenericExpr x
+runMetaGenericTermDerExprM me =
+  me
+    # map fromMetaGenericTermDerExpr
+    # runExceptT
+    # runIdentity
+    # either (\err -> unsafeCrashWith $ "Error: " <> show err) identity
+
+runMetaGenericSubDerExprM :: forall x. Show x => Eq x => ExceptT (Variant (ErrorRow x)) Identity (MetaGenericSubDerExpr x) -> GenericExpr x
+runMetaGenericSubDerExprM me =
+  me
+    # map fromMetaGenericSubDerExpr
+    # runExceptT
+    # runIdentity
+    # either (\err -> unsafeCrashWith $ "Error: " <> show err) identity
 
 --------------------------------------------------------------------------------
 -- Propagation Rules
@@ -651,47 +671,88 @@ rules =
                   _A
               )
         }
-  -- , let
-  --     _n = me "n"
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Extend at a"
-  --       , input: unsafeCrashWith "TODO"
-  --       , output: unsafeCrashWith "TODO"
-  --       }
-  -- , let
-  --     _n = me "n"
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Compose at t"
-  --       , input: unsafeCrashWith "TODO"
-  --       , output: unsafeCrashWith "TODO"
-  --       }
-  -- , let
-  --     _n = me "n"
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Compose at s"
-  --       , input: unsafeCrashWith "TODO"
-  --       , output: unsafeCrashWith "TODO"
-  --       }
-  -- , let
-  --     _n = me "n"
-  --     _a = me "a"
-  --     _a' = me "a'"
-  --     _A = me "A"
-  --   in
-  --     RS.Rule
-  --       { name: "propagate BoundaryTerm over Top"
-  --       , input:
-  --           topDer { n: _n, a: _a' }
-  --             ( boundaryTermDer { n: _n, a: _a, b: _a' }
-  --                 _A
-  --             )
-  --       , output:
-  --           topDer { n: _n, a: _a }
-  --             _A
-  --       }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _s' = me "s'"
+      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+      _a = me "a"
+      _A = pure $ Left $ mv "A" /\ { n: _n, a: _a }
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Extend at a"
+        , input: runMetaGenericSubDerExprM $
+            apply2M extendDerM (applyM (boundarySubDerM { s: _s' }) _S) _A
+        , output: runMetaGenericSubDerExprM $
+            applyM (boundarySubDerM { s: _s' })
+              (apply2M extendDerM _S _A)
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _t = me "t"
+      _s = me "s"
+      _s' = me "s'"
+      _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
+      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Compose at t"
+        , input: runMetaGenericSubDerExprM $
+            apply2M composeDerM
+              _T
+              ( applyM (boundarySubDerM { s: _s' })
+                  _S
+              )
+        , output: runMetaGenericSubDerExprM $
+            applyM (boundarySubDerM { s: composeSub _t _s' })
+              ( apply2M composeDerM
+                  _T
+                  _S
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _t = me "t"
+      _t' = me "t'"
+      _s = me "s"
+      _T = pure $ Left $ mv "T" /\ { m: _m, n: _n, s: _t }
+      _S = pure $ Left $ mv "S" /\ { m: _m, n: _n, s: _s }
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Compose at s"
+        , input: runMetaGenericSubDerExprM $
+            apply2M composeDerM
+              ( applyM (boundarySubDerM { s: _t' })
+                  _T
+              )
+              _S
+        , output: runMetaGenericSubDerExprM $
+            applyM (boundarySubDerM { s: composeSub _t' _s })
+              ( apply2M composeDerM
+                  _T
+                  _S
+              )
+        }
+  , let
+      _n = me "n"
+      _a = me "a"
+      _a' = me "a'"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Top"
+        , input:
+            topDer { n: _n, a: _a' }
+              ( boundaryTermDer { n: _n, a: _a, b: _a' }
+                  _A
+              )
+        , output:
+            topDer { n: _n, a: _a }
+              _A
+        }
   ]
 
 --------------------------------------------------------------------------------

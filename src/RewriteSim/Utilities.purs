@@ -2,6 +2,7 @@ module RewriteSim.Utilities where
 
 import Prelude
 
+import Control.Bind (bindFlipped)
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.State (class MonadState, StateT, gets, modify_, runStateT)
 import Data.Identity (Identity)
@@ -31,4 +32,7 @@ apply2M f ma mb = do
   a <- ma
   b <- mb
   f a b
+
+applyM :: forall m a b. Monad m => (a -> m b) -> m a -> m b
+applyM = bindFlipped
 

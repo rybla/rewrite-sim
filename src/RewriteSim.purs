@@ -95,7 +95,10 @@ instance (Show x, Show a) => Show (GenericExpr x a) where
   show x = genericShow x
 
 me :: forall a. String -> AbsExpr a
-me label = MetaExpr (MetaVar { label, index: 0 })
+me label = MetaExpr (mv label)
+
+mv :: String -> MetaVar
+mv label = MetaVar { label, index: 0 }
 
 type RenderExprCtx x a w i =
   { renderX :: x -> HTML w i
