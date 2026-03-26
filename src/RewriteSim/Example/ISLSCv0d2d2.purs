@@ -81,44 +81,6 @@ getIndicesOfDer ("HoleTerm" % [ n, a ]) = pure { n: n, a: a }
 getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der", expr }
 
 --------------------------------------------------------------------------------
--- Example Derivations
---------------------------------------------------------------------------------
-
-shiftDerFn :: forall m x. MonadError (Variant (ErrorRow x)) m => Show x => GenericExpr x -> m (GenericExpr x)
-shiftDerFn der = do
-  { n, a } <- getIndicesOfDer der
-  pure $
-    subDer { m: n, n: sucCtx n, s: shiftSub, a: a }
-      (shiftDer { n: n })
-      der
-
-deBruijn :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => Int -> { n :: GenericExpr x } -> m (GenericExpr x)
-deBruijn i { n } =
-  if i < 0 then unsafeCrashWith $ "deBruijn with negative index: " <> show i
-  else if i == 0 then
-    pure $ zeroDer { n }
-  else
-    shiftDerFn =<< deBruijn (i - 1) { n }
-
-oneDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
-oneDer { n } = shiftDerFn (zeroDer { n: n })
-
-twoDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
-twoDer { n } = shiftDerFn =<< oneDer { n: n }
-
-oneDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
-oneDer' { n } =
-  subDer { m: sucCtx n, n: sucCtx (sucCtx n), s: shiftSub, a: zeroTerm }
-    (shiftDer { n: sucCtx n })
-    (zeroDer { n: n })
-
-twoDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
-twoDer' { n } =
-  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
-    (shiftDer { n: sucCtx (sucCtx n) })
-    (oneDer' { n: n })
-
---------------------------------------------------------------------------------
 -- Derivation Rules
 --------------------------------------------------------------------------------
 
@@ -163,6 +125,44 @@ composeDer { l, m, n, t, s } sDer tDer = "Compose" % [ l, m, n, t, s, sDer, tDer
 
 holeSubDer :: forall x. { m :: GenericExpr x, n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x
 holeSubDer { m, n, a } = "HoleSub" % [ m, n, a ]
+
+--------------------------------------------------------------------------------
+-- Example Derivations
+--------------------------------------------------------------------------------
+
+shiftDerFn :: forall m x. MonadError (Variant (ErrorRow x)) m => Show x => GenericExpr x -> m (GenericExpr x)
+shiftDerFn der = do
+  { n, a } <- getIndicesOfDer der
+  pure $
+    subDer { m: n, n: sucCtx n, s: shiftSub, a: a }
+      (shiftDer { n: n })
+      der
+
+deBruijn :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => Int -> { n :: GenericExpr x } -> m (GenericExpr x)
+deBruijn i { n } =
+  if i < 0 then unsafeCrashWith $ "deBruijn with negative index: " <> show i
+  else if i == 0 then
+    pure $ zeroDer { n }
+  else
+    shiftDerFn =<< deBruijn (i - 1) { n }
+
+oneDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
+oneDer { n } = shiftDerFn (zeroDer { n: n })
+
+twoDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
+twoDer { n } = shiftDerFn =<< oneDer { n: n }
+
+oneDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
+oneDer' { n } =
+  subDer { m: sucCtx n, n: sucCtx (sucCtx n), s: shiftSub, a: zeroTerm }
+    (shiftDer { n: sucCtx n })
+    (zeroDer { n: n })
+
+twoDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
+twoDer' { n } =
+  subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
+    (shiftDer { n: sucCtx (sucCtx n) })
+    (oneDer' { n: n })
 
 --------------------------------------------------------------------------------
 -- Propagation Rules
