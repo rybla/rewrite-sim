@@ -12,6 +12,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim ((%), MetaVar)
 import RewriteSim as RS
 import RewriteSim.Example.Common (Example, Expr, Rule, GenericExpr, me)
+import RewriteSim.Utilities (apply2M)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -278,22 +279,28 @@ deBruijn_v1 i { n } =
     applyShiftDer_v1 =<< deBruijn_v1 (i - 1) { n }
 
 oneDer_v1 :: forall m @x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (GenericExpr x)
-oneDer_v1 { n } = applyShiftDer_v1 (zeroDer { n: n })
+oneDer_v1 { n } = applyShiftDer_v1 (zeroDer { n })
 
 twoDer_v1 :: forall m @x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (GenericExpr x)
-twoDer_v1 { n } = applyShiftDer_v1 =<< oneDer_v1 { n: n }
+twoDer_v1 { n } = applyShiftDer_v1 =<< oneDer_v1 { n }
 
 oneDer_v0 :: forall x. { n :: GenericExpr x } -> GenericExpr x
 oneDer_v0 { n } =
   subDer { m: sucCtx n, n: sucCtx (sucCtx n), s: shiftSub, a: zeroTerm }
     (shiftDer { n: sucCtx n })
-    (zeroDer { n: n })
+    (zeroDer { n })
 
 twoDer_v0 :: forall x. { n :: GenericExpr x } -> GenericExpr x
 twoDer_v0 { n } =
   subDer { m: sucCtx (sucCtx n), n: sucCtx (sucCtx (sucCtx n)), s: shiftSub, a: subTerm shiftSub zeroTerm }
     (shiftDer { n: sucCtx (sucCtx n) })
-    (oneDer_v0 { n: n })
+    (oneDer_v0 { n })
+
+oneDer_v2 :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
+oneDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n })
+
+twoDer_v2 :: forall m x. MonadThrow (Variant (ErrorRow x)) m => Show x => Eq x => { n :: GenericExpr x } -> m (MetaGenericTermDerExpr x)
+twoDer_v2 { n } = apply2M subDerM (shiftDerM { n: sucCtx (sucCtx n) }) (apply2M subDerM (shiftDerM { n: sucCtx n }) (zeroDerM { n }))
 
 --------------------------------------------------------------------------------
 -- Propagation Rules

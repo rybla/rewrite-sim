@@ -25,3 +25,10 @@ ignore _ b = b
 
 runIdentity :: forall a. Identity a -> a
 runIdentity = unwrap
+
+apply2M :: forall m a b c. Monad m => (a -> b -> m c) -> m a -> m b -> m c
+apply2M f ma mb = do
+  a <- ma
+  b <- mb
+  f a b
+
