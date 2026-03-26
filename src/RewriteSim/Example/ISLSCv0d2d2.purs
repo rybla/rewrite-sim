@@ -63,8 +63,8 @@ holeSub = "holeSub" % []
 
 -- derivation rules for top
 
-topDer :: forall x. GenericExpr x -> GenericExpr x
-topDer aDer = "Top" % [ aDer ]
+topDer :: forall x. { n :: GenericExpr x, a :: GenericExpr x } -> GenericExpr x -> GenericExpr x
+topDer { n, a } aDer = "Top" % [ n, a, aDer ]
 
 -- derivation rules for terms
 
@@ -315,7 +315,184 @@ rules =
   ----------------------------------------------------------------------------
   -- Boundary Propagation Rules
   ----------------------------------------------------------------------------
-  -- TODO
+  , let
+      _n = me "n"
+      _b = me "b"
+      _b' = me "b'"
+      _B = me "B"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Lam at b"
+        , input:
+            lamDer { n: _n, b: _b' }
+              ( boundaryTermDer { n: _n, a: _b, b: _b' }
+                  _B
+              )
+        , output:
+            boundaryTermDer { n: _n, a: _b, b: _b' }
+              ( lamDer { n: _n, b: _b' }
+                  _B
+              )
+        }
+  , let
+      _n = me "n"
+      _f = me "f"
+      _f' = me "f'"
+      _a = me "a"
+      _F = me "F"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over App at f"
+        , input:
+            appDer { n: _n, f: _f', a: _a }
+              ( boundaryTermDer { n: _n, a: _f, b: _f' }
+                  _F
+              )
+              _A
+        , output:
+            boundaryTermDer { n: _n, a: appTerm _f _a, b: appTerm _f' _a }
+              ( appDer { n: _n, f: _f, a: _a }
+                  _F
+                  _A
+              )
+        }
+  , let
+      _n = me "n"
+      _f = me "f"
+      _a = me "a"
+      _a' = me "a'"
+      _F = me "F"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over App at a"
+        , input:
+            appDer { n: _n, f: _f, a: _a' }
+              _F
+              ( boundaryTermDer { n: _n, a: _a, b: _a' }
+                  _A
+              )
+        , output:
+            boundaryTermDer { n: _n, a: appTerm _f _a, b: appTerm _f _a' }
+              ( appDer { n: _n, f: _f, a: _a }
+                  _F
+                  _A
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _s' = me "s'"
+      _a = me "a"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundarySub over Sub at s"
+        , input:
+            subDer { m: _m, n: _n, s: _s', a: _a }
+              ( boundarySubDer { m: _m, n: _n, t: _s, s: _s' }
+                  _S
+              )
+              _A
+        , output:
+            boundaryTermDer { n: _n, a: subTerm _s _a, b: subTerm _s' _a }
+              ( subDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _a = me "a"
+      _a' = me "a'"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Sub at a"
+        , input:
+            subDer { m: _m, n: _n, s: _s, a: _a' }
+              _S
+              ( boundaryTermDer { n: _m, a: _a, b: _a' }
+                  _A
+              )
+        , output:
+            boundaryTermDer { n: _n, a: subTerm _s _a', b: subTerm _s _a' }
+              ( subDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+        }
+  , let
+      _m = me "m"
+      _n = me "n"
+      _s = me "s"
+      _s' = me "s'"
+      _a = me "a"
+      _S = me "S"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Extend at s"
+        , input:
+            extendDer { m: _m, n: _n, s: _s', a: _a }
+              ( boundarySubDer { m: _m, n: _n, t: _s, s: _s' }
+                  _S
+              )
+              _A
+        , output:
+            boundarySubDer { m: _m, n: _n, t: extendSub _s _a, s: extendSub _s' _a }
+              ( extendDer { m: _m, n: _n, s: _s, a: _a }
+                  _S
+                  _A
+              )
+        }
+  , let
+      _n = me "n"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Extend at a"
+        , input: unsafeCrashWith "TODO"
+        , output: unsafeCrashWith "TODO"
+        }
+  , let
+      _n = me "n"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Compose at t"
+        , input: unsafeCrashWith "TODO"
+        , output: unsafeCrashWith "TODO"
+        }
+  , let
+      _n = me "n"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Compose at s"
+        , input: unsafeCrashWith "TODO"
+        , output: unsafeCrashWith "TODO"
+        }
+  , let
+      _n = me "n"
+      _a = me "a"
+      _a' = me "a'"
+      _A = me "A"
+    in
+      RS.Rule
+        { name: "propagate BoundaryTerm over Top"
+        , input:
+            topDer { n: _n, a: _a' }
+              ( boundaryTermDer { n: _n, a: _a, b: _a' }
+                  _A
+              )
+        , output:
+            topDer { n: _n, a: _a }
+              _A
+        }
   ]
 
 --------------------------------------------------------------------------------
