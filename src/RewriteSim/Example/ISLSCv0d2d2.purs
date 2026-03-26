@@ -84,12 +84,7 @@ getIndicesOfDer expr = throwError $ Variant.inj (Proxy @"invalid") { sort: "Der"
 -- Example Derivations
 --------------------------------------------------------------------------------
 
-shiftDerFn
-  :: forall m x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => GenericExpr x
-  -> m (GenericExpr x)
+shiftDerFn :: forall m x. MonadError (Variant (ErrorRow x)) m => Show x => GenericExpr x -> m (GenericExpr x)
 shiftDerFn der = do
   { n, a } <- getIndicesOfDer der
   pure $
@@ -105,20 +100,10 @@ deBruijn i { n } =
   else
     shiftDerFn =<< deBruijn (i - 1) { n }
 
-oneDer
-  :: forall m @x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => { n :: GenericExpr x }
-  -> m (GenericExpr x)
+oneDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
 oneDer { n } = shiftDerFn (zeroDer { n: n })
 
-twoDer
-  :: forall m @x
-   . MonadError (Variant (ErrorRow x)) m
-  => Show x
-  => { n :: GenericExpr x }
-  -> m (GenericExpr x)
+twoDer :: forall m @x. MonadError (Variant (ErrorRow x)) m => Show x => { n :: GenericExpr x } -> m (GenericExpr x)
 twoDer { n } = shiftDerFn =<< oneDer { n: n }
 
 oneDer' :: forall x. { n :: GenericExpr x } -> GenericExpr x
