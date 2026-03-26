@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Monad.Except (runExceptT)
 import RewriteSim.Example.Common (me)
-import RewriteSim.Example.ISLSCv0d2d2 (deBruijn, oneDer, oneDer', twoDer, twoDer', zeroDer)
+import RewriteSim.Example.ISLSCv0d2d2 (deBruijn_v1, oneDer_v1, oneDer_v0, twoDer_v0, twoDer_v1, zeroDer)
 import RewriteSim.Utilities (runIdentity)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -12,24 +12,24 @@ import Test.Spec.Assertions (shouldEqual)
 spec :: Spec Unit
 spec = do
   describe "ISLSC-0.2.2" do
-    it "oneDer == oneDer'" do
+    it "oneDer_v1 == oneDer_v0" do
       shouldEqual
-        (oneDer { n: me "n" } # runExceptT # runIdentity)
-        (oneDer' { n: me "n" } # pure)
-    it "twoDer == twoDer'" do
+        (oneDer_v1 { n: me "n" } # runExceptT # runIdentity)
+        (oneDer_v0 { n: me "n" } # pure)
+    it "twoDer_v1 == twoDer_v0" do
       shouldEqual
-        (twoDer { n: me "n" } # runExceptT # runIdentity)
-        (twoDer' { n: me "n" } # pure)
+        (twoDer_v1 { n: me "n" } # runExceptT # runIdentity)
+        (twoDer_v0 { n: me "n" } # pure)
     it "zeroDer == deBruijn 0" do
       shouldEqual
         (zeroDer { n: me "n" } # pure)
-        (deBruijn 0 { n: me "n" } # runExceptT # runIdentity)
-    it "oneDer == deBruijn 1" do
+        (deBruijn_v1 0 { n: me "n" } # runExceptT # runIdentity)
+    it "oneDer_v1 == deBruijn 1" do
       shouldEqual
-        (oneDer { n: me "n" } # runExceptT # runIdentity)
-        (deBruijn 1 { n: me "n" } # runExceptT # runIdentity)
-    it "twoDer == deBruijn 2" do
+        (oneDer_v1 { n: me "n" } # runExceptT # runIdentity)
+        (deBruijn_v1 1 { n: me "n" } # runExceptT # runIdentity)
+    it "twoDer_v1 == deBruijn 2" do
       shouldEqual
-        (twoDer { n: me "n" } # runExceptT # runIdentity)
-        (deBruijn 2 { n: me "n" } # runExceptT # runIdentity)
+        (twoDer_v1 { n: me "n" } # runExceptT # runIdentity)
+        (deBruijn_v1 2 { n: me "n" } # runExceptT # runIdentity)
     pure unit
