@@ -7,12 +7,13 @@ type SortSystem s =
   , sortOfExpr :: Expr -> s
   }
 
--- kidSortsOfExpr :: 
+-- type Rule = {
 
--- class IsExpr e s | e  -> s where
---   kidSortsOfExpr  :: e  -> Array s
---   sortOfExpr  :: e  -> s
---   showExpr :: GenericExpr 
+-- }
 
--- checkExpr :: 
+
+checkDerivation :: Expr -> 
+
+-- checkExpr ::  Expr -> m Expr
+
 
