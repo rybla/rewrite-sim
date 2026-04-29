@@ -11,9 +11,6 @@ type SortSystem s =
 
 -- }
 
-
-checkDerivation :: Expr -> 
+-- checkDerivation :: Expr -> 
 
 -- checkExpr ::  Expr -> m Expr
-
-
