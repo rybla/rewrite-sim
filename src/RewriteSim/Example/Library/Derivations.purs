@@ -1,4 +1,4 @@
-module RewriteSim.Example.Drv where
+module RewriteSim.Example.Library.Derivations where
 
 import Prelude
 
@@ -146,10 +146,7 @@ type DerivationRuleError d =
 
 makeDerivationRule
   :: forall sort s d m
-   . Show sort
-  => Eq sort
-  => Show s
-  => MonadReader (DerivationRuleContext sort s) m
+   . MonadReader (DerivationRuleContext sort s) m
   => MonadThrow (DerivationRuleError d) m
   => d
   -> Array (SequentM sort s m (Sequent s))
@@ -202,10 +199,7 @@ throwDerivingError message = do
 
 makeDerivation
   :: forall m sort s d
-   . Show s
-  => Eq s
-  => Show d
-  => Eq d
+   . Eq s
   => MonadReader (DerivingContext sort s d) m
   => MonadState (DerivingState s d) m
   => MonadError DerivingError m
