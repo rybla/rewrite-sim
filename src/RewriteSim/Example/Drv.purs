@@ -2,24 +2,29 @@ module RewriteSim.Example.Drv where
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadError, throwError)
-import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, gets)
+import Control.Monad.Error.Class (class MonadError, class MonadThrow, throwError)
+import Control.Monad.Except (ExceptT, runExceptT)
+import Control.Monad.Reader (class MonadReader, ReaderT, ask, runReaderT)
+import Control.Monad.State (class MonadState, StateT, evalStateT, execStateT, gets)
 import Data.Array as Array
+import Data.Either (either)
 import Data.Foldable (intercalate, length, traverse_)
-import Data.Lens (view, (%~), (.=))
+import Data.Lens (view, (.=))
 import Data.Lens.At (at)
 import Data.Lens.Record (prop)
-import Data.List (List)
-import Data.List as List
 import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Traversable (sequence)
-import Data.Tuple (uncurry)
-import Data.Tuple.Nested ((/\))
-import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (GenericExpr(..), MetaVar, AbsExpr)
+import Data.Tuple (Tuple(..), fst)
+import Data.Tuple.Nested (type (/\), (/\))
+import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, newUnificationEnv, substAbsExpr, unify)
 import Type.Proxy (Proxy(..))
+
+--------------------------------------------------------------------------------
+
+mapThrow :: forall e1 e2 m a. MonadThrow e2 m => (e1 -> e2) -> ExceptT e1 m a -> m a
+mapThrow f m = m # runExceptT >>= either (f >>> throwError) pure
 
 --------------------------------------------------------------------------------
 
@@ -28,41 +33,57 @@ import Type.Proxy (Proxy(..))
 type Sequent :: Type -> Type
 type Sequent s = AbsExpr s
 
-type SortRule sort =
+type SequentRule sort =
   { hypotheses :: Array sort
   , conclusion :: sort
   }
 
-type SortSystem sort s =
-  { rules :: s -> SortRule sort
+type SequentSystem sort s =
+  { rules :: s -> SequentRule sort
   , showSequent :: Sequent s -> String
   }
 
-type SortingState sort s =
+type SequentM sort s m = ReaderT (SequentContext sort s) (StateT (SequentState sort s) (ExceptT (SequentError s) m))
+
+type SequentState :: Type -> Type -> Type
+type SequentState sort s =
   { metaSorts :: Map MetaVar sort
   }
 
-type SortingContext sort s =
-  { sortSystem :: SortSystem sort s
-  , stack :: List (Sequent s)
+newSequentState
+  :: forall sort s
+   . {}
+  -> SequentState sort s
+newSequentState {} =
+  { metaSorts: Map.empty
   }
 
-type SortingError s =
-  { stack :: List (Sequent s)
-  , message :: String
+type SequentContext sort s =
+  { sequentSystem :: SequentSystem sort s
   }
 
-throwSortingError
+newSequentContext
+  :: forall sort s
+   . { sequentSystem :: SequentSystem sort s }
+  -> SequentContext sort s
+newSequentContext { sequentSystem } =
+  { sequentSystem
+  }
+
+type SequentError :: Type -> Type
+type SequentError s =
+  { message :: String
+  }
+
+throwSequentError
   :: forall m sort s a
-   . MonadReader (SortingContext sort s) m
-  => MonadError (SortingError s) m
+   . MonadReader (SequentContext sort s) m
+  => MonadError (SequentError s) m
   => String
   -> m a
-throwSortingError message = do
-  ctx <- ask
+throwSequentError message = do
   throwError
-    { stack: ctx.stack
-    , message
+    { message
     }
 
 makeSequent
@@ -70,18 +91,18 @@ makeSequent
    . Show sort
   => Eq sort
   => Show s
-  => MonadReader (SortingContext sort s) m
-  => MonadState (SortingState sort s) m
-  => MonadError (SortingError s) m
+  => MonadReader (SequentContext sort s) m
+  => MonadState (SequentState sort s) m
+  => MonadError (SequentError s) m
   => s
   -> Array (m (Sequent s))
   -> m (Sequent s)
 makeSequent s kidsM = do
   ctx <- ask
   kids <- sequence kidsM
-  let rule = ctx.sortSystem.rules s
+  let rule = ctx.sequentSystem.rules s
   unless (length rule.hypotheses == (length kids :: Int)) do
-    throwSortingError $ "A sequent with label " <> show s <> " is expected to have " <> show (length rule.hypotheses :: Int) <> " kids of sorts " <> (rule.hypotheses # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
+    throwSequentError $ "A sequent with label " <> show s <> " is expected to have " <> show (length rule.hypotheses :: Int) <> " kids of sorts " <> (rule.hypotheses # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
   Array.zip rule.hypotheses kids # traverse_ case _ of
     expectedKidSort /\ MetaExpr x ->
       gets (view (prop (Proxy @"metaSorts") <<< at x)) >>= case _ of
@@ -89,11 +110,11 @@ makeSequent s kidsM = do
           prop (Proxy @"metaSorts") <<< at x .= Just expectedKidSort
         Just actualKidSort -> do
           unless (expectedKidSort == actualKidSort) do
-            throwSortingError $ "The sequent meta variable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
+            throwSequentError $ "The sequent metavariable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
     expectedKidSort /\ kid@(Expr kidS _) -> do
-      let kidRule = ctx.sortSystem.rules kidS
+      let kidRule = ctx.sequentSystem.rules kidS
       unless (expectedKidSort == kidRule.conclusion) do
-        throwSortingError $ "The sequent " <> ctx.sortSystem.showSequent kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show kidRule.conclusion <> "."
+        throwSequentError $ "The sequent " <> ctx.sequentSystem.showSequent kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show kidRule.conclusion <> "."
   pure $ Expr s kids
 
 --------------------------------------------------------------------------------
@@ -102,6 +123,8 @@ makeSequent s kidsM = do
 
 type Derivation d = AbsExpr d
 
+type DerivationAndSequent s d = Derivation d /\ Sequent s
+
 type DerivationRule s =
   { hypotheses :: Array (Sequent s)
   , conclusion :: Sequent s
@@ -109,14 +132,56 @@ type DerivationRule s =
 
 type DerivationSystem s d =
   { rules :: d -> DerivationRule s
+  , showDerivation :: Derivation d -> String
   }
 
+type DerivationRuleContext sort s =
+  { sequentSystem :: SequentSystem sort s
+  }
+
+type DerivationRuleError d =
+  { derivationLabel :: d
+  , message :: String
+  }
+
+makeDerivationRule
+  :: forall sort s d m
+   . Show sort
+  => Eq sort
+  => Show s
+  => MonadReader (DerivationRuleContext sort s) m
+  => MonadThrow (DerivationRuleError d) m
+  => d
+  -> Array (SequentM sort s m (Sequent s))
+  -> SequentM sort s m (Sequent s)
+  -> m (DerivationRule s)
+makeDerivationRule d hypothesesM conclusionM = do
+  ctx <- ask
+  let
+    runSequentM :: forall a. SequentM sort s m a -> m a
+    runSequentM m = m
+      # flip runReaderT
+          ( newSequentContext
+              { sequentSystem: ctx.sequentSystem
+              }
+          )
+      # flip evalStateT (newSequentState {})
+      # mapThrow
+          ( \error ->
+              { derivationLabel: d
+              , message: error.message
+              }
+          )
+  hypotheses /\ conclusion <- runSequentM $ Tuple <$> sequence hypothesesM <*> conclusionM
+  pure { hypotheses, conclusion }
+
+type DerivingState :: Type -> Type -> Type
 type DerivingState s d =
   { metaSub :: Map MetaVar (Sequent s)
   }
 
 type DerivingContext sort s d =
-  { sortSystem :: SortSystem sort s
+  { sequentSystem :: SequentSystem sort s
   , derivationSystem :: DerivationSystem s d
   }
 
@@ -135,19 +200,30 @@ throwDerivingError message = do
     { message
     }
 
--- makeDerivation
---   :: forall m sort s d
---    . Eq s
---   => Show s
---   => MonadReader (DerivingContext sort s d) m
---   => MonadState (DerivingState s d) m
---   => MonadError DerivingError m
---   => d
---   -> Array (m (Derivation d))
---   -> m (Derivation d)
--- makeDerivation d kidsM = do
---   let rule = 
---   kids <- sequence kidsM
---   -- unify each kid's conclusion with the corresponding hypothesis of d's rule
---   unsafeCrashWith "TODO"
-
+makeDerivation
+  :: forall m sort s d
+   . Show s
+  => Eq s
+  => Show d
+  => Eq d
+  => MonadReader (DerivingContext sort s d) m
+  => MonadState (DerivingState s d) m
+  => MonadError DerivingError m
+  => d
+  -> Array (m (DerivationAndSequent s d))
+  -> m (DerivationAndSequent s d)
+makeDerivation d kidsM = do
+  ctx <- ask
+  let rule = ctx.derivationSystem.rules d
+  kids <- sequence kidsM
+  unificationEnv <- Array.zip rule.hypotheses kids
+    #
+      ( traverse_ case _ of
+          _ /\ (MetaExpr x /\ _) -> throwError { message: "A metavariable, " <> show x <> ", appeared as a hypothesis of a derivation rule. You _cannot_ use metavariables in place of derivations." }
+          expectedKidSequent /\ (kid /\ actualKidSequent) -> do
+            unify expectedKidSequent actualKidSequent
+              # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.showDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.showSequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.showSequent error.e1 <> " with " <> ctx.sequentSystem.showSequent error.e2 <> " because " <> error.reason })
+      )
+    # flip execStateT (newUnificationEnv {})
+  let conclusionSequent = substAbsExpr unificationEnv.sigma rule.conclusion
+  pure $ Expr d (kids # map fst) /\ conclusionSequent

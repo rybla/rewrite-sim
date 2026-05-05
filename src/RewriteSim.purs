@@ -86,7 +86,7 @@ derive instance Generic (GenericExpr x a) _
 
 derive instance Bifunctor GenericExpr
 
-derive instance Functor Expr
+derive instance Functor (GenericExpr x)
 
 instance (Eq x, Eq a) => Eq (GenericExpr x a) where
   eq x = genericEq x
@@ -172,10 +172,16 @@ renderExpr (Expr a es) = do
 
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
 
-substAbsExpr :: forall a. AbsExprSubst a -> AbsExpr a -> Expr a
-substAbsExpr sigma (MetaExpr x) = case Map.lookup x sigma of
+substAbsExprToExpr :: forall a. AbsExprSubst a -> AbsExpr a -> Expr a
+substAbsExprToExpr sigma (MetaExpr x) = case Map.lookup x sigma of
   Nothing -> unsafeCrashWith $ "Unknown metavariable: " <> show x
-  Just e -> substAbsExpr sigma e
+  Just e -> substAbsExprToExpr sigma e
+substAbsExprToExpr sigma (Expr a es) = Expr a (map (substAbsExprToExpr sigma) es)
+
+substAbsExpr :: forall a. AbsExprSubst a -> AbsExpr a -> AbsExpr a
+substAbsExpr sigma e@(MetaExpr x) = case Map.lookup x sigma of
+  Nothing -> e
+  Just e' -> substAbsExpr sigma e'
 substAbsExpr sigma (Expr a es) = Expr a (map (substAbsExpr sigma) es)
 
 type UnificationEnv a =
@@ -244,7 +250,7 @@ applyRule (Rule r) e = do
     # runExceptT
   case err_or_env of
     Left _err -> pure Nothing
-    Right env -> pure $ Just $ substAbsExpr env.sigma r.output
+    Right env -> pure $ Just $ substAbsExprToExpr env.sigma r.output
 
 mapRule :: forall a b. (a -> b) -> Rule a -> Rule b
 mapRule f (Rule r) = Rule
