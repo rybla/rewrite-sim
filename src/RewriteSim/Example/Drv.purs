@@ -35,7 +35,8 @@ type SortSystem sort s =
   }
 
 type SortingState sort s =
-  { metaVarSorts :: Map MetaVar sort }
+  { metaSorts :: Map MetaVar sort
+  }
 
 type SortingContext sort s =
   { sortSystem :: SortSystem sort s
@@ -79,9 +80,9 @@ makeSequent s kidsM = do
     throwSortingError $ "A sequent with label " <> show s <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
   Array.zip kidSorts kids # traverse_ case _ of
     expectedKidSort /\ MetaExpr x ->
-      gets (view (prop (Proxy @"metaVarSorts") <<< at x)) >>= case _ of
+      gets (view (prop (Proxy @"metaSorts") <<< at x)) >>= case _ of
         Nothing -> do
-          prop (Proxy @"metaVarSorts") <<< at x .= Just expectedKidSort
+          prop (Proxy @"metaSorts") <<< at x .= Just expectedKidSort
         Just actualKidSort -> do
           unless (expectedKidSort == actualKidSort) do
             throwSortingError $ "The sequent meta variable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
@@ -91,55 +92,56 @@ makeSequent s kidsM = do
         throwSortingError $ "The sequent " <> ctx.sortSystem.showExpr kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> "."
   pure $ Expr s kids
 
--- --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
--- -- "d" is for "derivation label"
+-- "d" is for "derivation label"
 
--- type Derivation d = AbsExpr d
+type Derivation d = AbsExpr d
 
--- type DerivationRule s =
---   { hypotheses :: Array (Sequent s)
---   , conclusion :: Sequent s
---   }
+type DerivationRule s =
+  { hypotheses :: Array (Sequent s)
+  , conclusion :: Sequent s
+  }
 
--- type DerivationSystem s d =
---   { rules :: d -> DerivationRule s
---   }
+type DerivationSystem s d =
+  { rules :: d -> DerivationRule s
+  }
 
--- type DerivingState s d =
---   {}
+type DerivingState s d =
+  { metaSub :: Map MetaVar (Sequent s)
+  }
 
--- type DerivingContext sort s d =
---   { sortSystem :: SortSystem sort s
---   , derivationSystem :: DerivationSystem s d
---   }
+type DerivingContext sort s d =
+  { sortSystem :: SortSystem sort s
+  , derivationSystem :: DerivationSystem s d
+  }
 
--- type DerivingError =
---   { message :: String
---   }
+type DerivingError =
+  { message :: String
+  }
 
--- throwDerivingError
---   :: forall m sort s d a
---    . MonadReader (DerivingContext sort s d) m
---   => MonadError DerivingError m
---   => String
---   -> m a
--- throwDerivingError message = do
---   throwError
---     { message
---     }
+throwDerivingError
+  :: forall m sort s d a
+   . MonadReader (DerivingContext sort s d) m
+  => MonadError DerivingError m
+  => String
+  -> m a
+throwDerivingError message = do
+  throwError
+    { message
+    }
 
--- makeDerivation
---   :: forall m sort s d
---    . Eq s
---   => Show s
---   => MonadReader (DerivingContext sort s d) m
---   => MonadState (DerivingState s d) m
---   => MonadError DerivingError m
---   => d
---   -> Array (m (Derivation d))
---   -> m (Derivation d)
--- makeDerivation _l kidsM = do
---   kids <- sequence kidsM
---   unsafeCrashWith "TODO"
+makeDerivation
+  :: forall m sort s d
+   . Eq s
+  => Show s
+  => MonadReader (DerivingContext sort s d) m
+  => MonadState (DerivingState s d) m
+  => MonadError DerivingError m
+  => d
+  -> Array (m (Derivation d))
+  -> m (Derivation d)
+makeDerivation _l kidsM = do
+  kids <- sequence kidsM
+  unsafeCrashWith "TODO"
 
