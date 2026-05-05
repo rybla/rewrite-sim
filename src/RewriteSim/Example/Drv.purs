@@ -17,38 +17,39 @@ import Data.Maybe (Maybe(..))
 import Data.Traversable (sequence)
 import Data.Tuple (uncurry)
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (GenericExpr(..), MetaVar)
-import RewriteSim.Example.Common (AbsExpr, ExprLabel)
+import RewriteSim (GenericExpr(..), MetaVar, AbsExpr)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 
-type SequentLabel = ExprLabel
-type Sequent = AbsExpr
+-- "s" is for "sequent label"
 
-type SortSystem s =
-  { kidSortsOfLabel :: SequentLabel -> Array s
-  , sortOfLabel :: SequentLabel -> s
-  , showExpr :: Sequent -> String
+type Sequent :: Type -> Type
+type Sequent s = AbsExpr s
+
+type SortSystem sort s =
+  { kidSortsOfLabel :: s -> Array sort
+  , sortOfLabel :: s -> sort
+  , showExpr :: Sequent s -> String
   }
 
-type SortingState s =
-  { metaVarSorts :: Map MetaVar s }
+type SortingState sort s =
+  { metaVarSorts :: Map MetaVar sort }
 
-type SortingContext s =
-  { sortSystem :: SortSystem s
-  , stack :: List Sequent
+type SortingContext sort s =
+  { sortSystem :: SortSystem sort s
+  , stack :: List (Sequent s)
   }
 
-type SortingError =
-  { stack :: List Sequent
+type SortingError s =
+  { stack :: List (Sequent s)
   , message :: String
   }
 
 throwSortingError
-  :: forall m s a
-   . MonadReader (SortingContext s) m
-  => MonadError SortingError m
+  :: forall m sort s a
+   . MonadReader (SortingContext sort s) m
+  => MonadError (SortingError s) m
   => String
   -> m a
 throwSortingError message = do
@@ -59,28 +60,30 @@ throwSortingError message = do
     }
 
 makeSequent
-  :: forall m s
+  :: forall m sort s
    . Eq s
   => Show s
-  => MonadReader (SortingContext s) m
-  => MonadState (SortingState s) m
-  => MonadError SortingError m
-  => SequentLabel
-  -> Array (m Sequent)
-  -> m Sequent
+  => MonadReader (SortingContext sort s) m
+  => MonadState (SortingState sort s) m
+  => MonadError (SortingError s) m
+  => s
+  -> Array (m (Sequent s))
+  -> m (Sequent s)
 makeSequent _l kidsM = do
   _kids <- sequence kidsM
   unsafeCrashWith "TODO"
 
 checkSortOfSequent
-  :: forall m s
-   . Eq s
+  :: forall m sort s
+   . Show sort
+  => Eq sort
   => Show s
-  => MonadReader (SortingContext s) m
-  => MonadState (SortingState s) m
-  => MonadError SortingError m
-  => s
-  -> Sequent
+  => Eq s
+  => MonadReader (SortingContext sort s) m
+  => MonadState (SortingState sort s) m
+  => MonadError (SortingError s) m
+  => sort
+  -> Sequent s
   -> m Unit
 checkSortOfSequent expectedSort sequent =
   local (prop (Proxy @"stack") %~ List.Cons sequent) do
@@ -102,51 +105,55 @@ checkSortOfSequent expectedSort sequent =
           throwSortingError $ "A sort with label " <> show l <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
         Array.zip kidSorts kids # traverse_ (uncurry checkSortOfSequent)
 
---------------------------------------------------------------------------------
+-- --------------------------------------------------------------------------------
 
-type DerivationLabel = ExprLabel
-type Derivation = AbsExpr
+-- -- "d" is for "derivation label"
 
-type DerivationRule =
-  { label :: DerivationLabel
-  , hypotheses :: Array Sequent
-  , conclusion :: Sequent
-  }
+-- type Derivation d = AbsExpr d
 
-type DerivationSystem =
-  { rules :: Array DerivationRule
-  }
+-- type DerivationRule s =
+--   { hypotheses :: Array (Sequent s)
+--   , conclusion :: Sequent s
+--   }
 
-type DerivationState s =
-  {}
+-- type DerivationSystem s d =
+--   { rules :: d -> DerivationRule s
+--   }
 
-type DerivationContext s =
-  { sortSystem :: SortSystem s
-  }
+-- type DerivingState s d =
+--   {}
 
-type DerivationError =
-  { message :: String
-  }
+-- type DerivingContext sort s d =
+--   { sortSystem :: SortSystem sort s
+--   , derivationSystem :: DerivationSystem s d
+--   }
 
-throwDerivationError
-  :: forall m s a
-   . MonadReader (DerivationContext s) m
-  => MonadError DerivationError m
-  => String
-  -> m a
-throwDerivationError message = do
-  throwError
-    { message
-    }
+-- type DerivingError =
+--   { message :: String
+--   }
 
--- checkSortOfSequent
---   :: forall m s
+-- throwDerivingError
+--   :: forall m sort s d a
+--    . MonadReader (DerivingContext sort s d) m
+--   => MonadError DerivingError m
+--   => String
+--   -> m a
+-- throwDerivingError message = do
+--   throwError
+--     { message
+--     }
+
+-- makeDerivation
+--   :: forall m sort s d
 --    . Eq s
 --   => Show s
---   => MonadReader (SortingContext s) m
---   => MonadState (SortingState s) m
---   => MonadError SortingError m
---   => s
---   -> Sequent
---   -> m Unit
--- checkSortOfSequent expectedSort sequent =
+--   => MonadReader (DerivingContext sort s d) m
+--   => MonadState (DerivingState s d) m
+--   => MonadError DerivingError m
+--   => d
+--   -> Array (m (Derivation d))
+--   -> m (Derivation d)
+-- makeDerivation _l kidsM = do
+--   kids <- sequence kidsM
+--   unsafeCrashWith "TODO"
+
