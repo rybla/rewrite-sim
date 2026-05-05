@@ -2,14 +2,16 @@ module RewriteSim.Example.DerivationsEx1 where
 
 import Prelude
 
+import Control.Alternative (guard)
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Reader (ReaderT, runReaderT)
+import Data.Array as Array
 import Data.Either (either)
 import Data.Identity (Identity)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.String as String
-import Options.Applicative.Internal.Utils (startsWith)
+import Data.Tuple.Nested ((/\))
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar(..))
 import RewriteSim.Example.Library.Derivations (DerivationRuleContext, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%%))
@@ -21,17 +23,17 @@ sequentSystem :: SequentSystem String String
 sequentSystem =
   { rules: case _ of
       -- Judgment
-      "Typing" -> makeSequentRule [ "Context", "Type", "Term" ] "Judgment"
+      "typing" -> makeSequentRule [ "Context", "Type", "Term" ] "Judgment"
       -- Context
-      "Nil" -> makeSequentRule [] "Context"
-      "Cons" -> makeSequentRule [ "Type", "Context" ] "Context"
+      "nil" -> makeSequentRule [] "Context"
+      "cons" -> makeSequentRule [ "Type", "Context" ] "Context"
       -- Type
-      "Unit" -> makeSequentRule [] "Type"
-      "Arr" -> makeSequentRule [ "Type", "Type" ] "Type"
+      "unit" -> makeSequentRule [] "Type"
+      "arr" -> makeSequentRule [ "Type", "Type" ] "Type"
       -- Term
-      "Var" -> makeSequentRule [ "Name" ] "Term"
-      "Lam" -> makeSequentRule [ "Name", "Term" ] "Term"
-      "App" -> makeSequentRule [ "Term", "Term" ] "Term"
+      "var" -> makeSequentRule [ "Name" ] "Term"
+      "lam" -> makeSequentRule [ "Name", "Term" ] "Term"
+      "app" -> makeSequentRule [ "Term", "Term" ] "Term"
       -- Name
       s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] "Name"
       --   
@@ -40,19 +42,19 @@ sequentSystem =
       let
         showSequent = case _ of
           -- Judgment
-          Expr "Typing" [ g, t, a ] -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
+          Expr "typing" [ g, t, a ] -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
           -- Context
-          Expr "Nil" [] -> "[]"
-          Expr "Cons" [ t, g ] -> showSequent t <> ", " <> showSequent g
+          Expr "nil" [] -> "[]"
+          Expr "cons" [ t, g ] -> showSequent t <> ", " <> showSequent g
           -- Type
-          Expr "Unit" [] -> "Unit"
-          Expr "Arr" [ s, t ] -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
+          Expr "unit" [] -> "unit"
+          Expr "arr" [ s, t ] -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
           -- Term
-          Expr "Var" [ x ] -> showSequent x
-          Expr "Lam" [ x, b ] -> showSequent x <> " => " <> showSequent b
-          Expr "App" [ f, a ] -> "(" <> showSequent f <> ") " <> showSequent a
+          Expr "var" [ x ] -> showSequent x
+          Expr "lam" [ x, b ] -> "lambda " <> showSequent x <> " . " <> showSequent b
+          Expr "app" [ f, a ] -> "(" <> showSequent f <> ") " <> showSequent a
           -- Name
-          Expr s [] | Just x <- String.stripPrefix (String.Pattern "Name:") s -> x
+          Expr s [] | Just x <- String.stripPrefix (String.Pattern "name:") s -> x
           --
           e -> show e
       in
@@ -67,21 +69,34 @@ runDerivationRuleM m = m
   # flip runReaderT { sequentSystem }
   # runExceptT
   # unwrap
-  # either (\error -> unsafeCrashWith $ "[runDerivationRuleM] Derivation label was " <> error.derivationLabel <> " and the error was " <> error.message) identity
+  # either (\error -> unsafeCrashWith $ "[runDerivationRuleM] At derivation label " <> error.derivationLabel <> ": " <> error.message) identity
 
 derivationSystem :: DerivationSystem String String
 derivationSystem =
-  { rules: case _ of
-      "LamD" -> runDerivationRuleM $ makeDerivationRule "LamD"
-        [ "Typing" %% [ "Cons" %% [ mvS "Gamma", mvS "A" ], mvS "B", mvS "b" ] ]
-        ("Typing" %% [ mvS "Gamma", "Arrow" %% [ mvS "A", mvS "B" ], "Lam" %% [ mvS "x", mvS "b" ] ])
-      -- 
-      d -> unsafeCrashWith $ "Unrecognized derivation label: " <> show d
+  { rules:
+      let
+        rules = map runDerivationRuleM
+          [ makeDerivationRule "Lam"
+              [ "typing" %% [ "cons" %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
+              ("typing" %% [ mvS "Gamma", "arr" %% [ mvS "A", mvS "B" ], "lam" %% [ mvS "x", mvS "b" ] ])
+          ]
+      in
+        \d ->
+          case
+            rules # Array.findMap
+              ( \(d' /\ rule) -> do
+                  guard (d == d')
+                  pure rule
+              )
+            of
+            Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> show d
+            Just rule -> rule
   , showDerivation:
       let
         showDerivation = case _ of
-          Expr "LamD" [ bD ] -> "lambda " <> showDerivation bD
-          _ -> ""
+          Expr "Lam" [ x, b ] -> "lambda " <> showDerivation x <> " . " <> showDerivation b
+          e -> show e
       in
         showDerivation
   }
+

@@ -156,7 +156,7 @@ makeDerivationRule
   => d
   -> Array (SequentM sort s m (Sequent s))
   -> SequentM sort s m (Sequent s)
-  -> m (DerivationRule s)
+  -> m (d /\ DerivationRule s)
 makeDerivationRule d hypothesesM conclusionM = do
   ctx <- ask
   let
@@ -175,7 +175,7 @@ makeDerivationRule d hypothesesM conclusionM = do
               }
           )
   hypotheses /\ conclusion <- runSequentM $ Tuple <$> sequence hypothesesM <*> conclusionM
-  pure { hypotheses, conclusion }
+  pure $ d /\ { hypotheses, conclusion }
 
 type DerivingState :: Type -> Type -> Type
 type DerivingState s d =
