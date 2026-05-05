@@ -16,6 +16,7 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (sequence)
 import Data.Tuple (uncurry)
+import Data.Tuple.Nested ((/\))
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar, AbsExpr)
 import Type.Proxy (Proxy(..))
@@ -61,7 +62,8 @@ throwSortingError message = do
 
 makeSequent
   :: forall m sort s
-   . Eq s
+   . Show sort
+  => Eq sort
   => Show s
   => MonadReader (SortingContext sort s) m
   => MonadState (SortingState sort s) m
@@ -69,41 +71,25 @@ makeSequent
   => s
   -> Array (m (Sequent s))
   -> m (Sequent s)
-makeSequent _l kidsM = do
-  _kids <- sequence kidsM
-  unsafeCrashWith "TODO"
-
-checkSortOfSequent
-  :: forall m sort s
-   . Show sort
-  => Eq sort
-  => Show s
-  => Eq s
-  => MonadReader (SortingContext sort s) m
-  => MonadState (SortingState sort s) m
-  => MonadError (SortingError s) m
-  => sort
-  -> Sequent s
-  -> m Unit
-checkSortOfSequent expectedSort sequent =
-  local (prop (Proxy @"stack") %~ List.Cons sequent) do
-    ctx <- ask
-    case sequent of
-      MetaExpr x -> do
-        gets (view (prop (Proxy @"metaVarSorts") <<< at x)) >>= case _ of
-          Nothing -> do
-            prop (Proxy @"metaVarSorts") <<< at x .= Just expectedSort
-          Just actualSort -> do
-            unless (actualSort == expectedSort) do
-              throwSortingError $ "The meta variable " <> show sequent <> " is expected to have sort " <> show expectedSort <> " but it actually has sort " <> show actualSort <> " as inferred from its other appearances."
-      Expr l kids -> do
-        let actualSort = ctx.sortSystem.sortOfLabel l
-        unless (actualSort == expectedSort) do
-          throwSortingError $ "The sequent " <> ctx.sortSystem.showExpr sequent <> " is expected to have sort " <> show expectedSort <> " but it actually has sort " <> show actualSort <> "."
-        let kidSorts = ctx.sortSystem.kidSortsOfLabel l
-        unless (length kids == (length kidSorts :: Int)) do
-          throwSortingError $ "A sort with label " <> show l <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
-        Array.zip kidSorts kids # traverse_ (uncurry checkSortOfSequent)
+makeSequent s kidsM = do
+  ctx <- ask
+  kids <- sequence kidsM
+  let kidSorts = ctx.sortSystem.kidSortsOfLabel s
+  unless (length kidSorts == (length kids :: Int)) do
+    throwSortingError $ "A sequent with label " <> show s <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
+  Array.zip kidSorts kids # traverse_ case _ of
+    expectedKidSort /\ MetaExpr x ->
+      gets (view (prop (Proxy @"metaVarSorts") <<< at x)) >>= case _ of
+        Nothing -> do
+          prop (Proxy @"metaVarSorts") <<< at x .= Just expectedKidSort
+        Just actualKidSort -> do
+          unless (expectedKidSort == actualKidSort) do
+            throwSortingError $ "The sequent meta variable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
+    expectedKidSort /\ kid@(Expr kidS _) -> do
+      let actualKidSort = ctx.sortSystem.sortOfLabel kidS
+      unless (expectedKidSort == actualKidSort) do
+        throwSortingError $ "The sequent " <> ctx.sortSystem.showExpr kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> "."
+  pure $ Expr s kids
 
 -- --------------------------------------------------------------------------------
 
