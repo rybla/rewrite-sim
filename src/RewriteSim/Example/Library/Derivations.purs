@@ -38,6 +38,9 @@ type SequentRule sort =
   , conclusion :: sort
   }
 
+makeSequentRule :: forall sort. Array sort -> sort -> SequentRule sort
+makeSequentRule hypotheses conclusion = { hypotheses, conclusion }
+
 type SequentSystem sort s =
   { rules :: s -> SequentRule sort
   , showSequent :: Sequent s -> String
@@ -201,6 +204,7 @@ throwDerivingError message = do
 
 infix 1 makeDerivation as %
 
+-- TODO: freshen metavars
 makeDerivation
   :: forall m sort s d
    . Eq s

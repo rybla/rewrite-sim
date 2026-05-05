@@ -5,12 +5,14 @@ import RewriteSim as RS
 
 --------------------------------------------------------------------------------
 
-newtype ExprLabel = ExprLabel String
+-- newtype ExprLabel = ExprLabel String
 
-derive instance Eq ExprLabel
+-- derive instance Eq ExprLabel
 
-instance Show ExprLabel where
-  show (ExprLabel l) = l
+-- instance Show ExprLabel where
+--   show (ExprLabel l) = l
+
+type ExprLabel = String
 
 type Expr = RS.Expr ExprLabel
 type AbsExpr = RS.AbsExpr ExprLabel
