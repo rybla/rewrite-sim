@@ -86,6 +86,8 @@ throwSequentError message = do
     { message
     }
 
+infix 1 makeSequent as %%
+
 makeSequent
   :: forall m sort s
    . Show sort
@@ -196,6 +198,8 @@ throwDerivingError message = do
   throwError
     { message
     }
+
+infix 1 makeDerivation as %
 
 makeDerivation
   :: forall m sort s d
