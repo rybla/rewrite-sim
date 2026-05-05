@@ -28,10 +28,14 @@ import Type.Proxy (Proxy(..))
 type Sequent :: Type -> Type
 type Sequent s = AbsExpr s
 
+type SortRule sort =
+  { hypotheses :: Array sort
+  , conclusion :: sort
+  }
+
 type SortSystem sort s =
-  { kidSortsOfLabel :: s -> Array sort
-  , sortOfLabel :: s -> sort
-  , showExpr :: Sequent s -> String
+  { rules :: s -> SortRule sort
+  , showSequent :: Sequent s -> String
   }
 
 type SortingState sort s =
@@ -75,10 +79,10 @@ makeSequent
 makeSequent s kidsM = do
   ctx <- ask
   kids <- sequence kidsM
-  let kidSorts = ctx.sortSystem.kidSortsOfLabel s
-  unless (length kidSorts == (length kids :: Int)) do
-    throwSortingError $ "A sequent with label " <> show s <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
-  Array.zip kidSorts kids # traverse_ case _ of
+  let rule = ctx.sortSystem.rules s
+  unless (length rule.hypotheses == (length kids :: Int)) do
+    throwSortingError $ "A sequent with label " <> show s <> " is expected to have " <> show (length rule.hypotheses :: Int) <> " kids of sorts " <> (rule.hypotheses # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
+  Array.zip rule.hypotheses kids # traverse_ case _ of
     expectedKidSort /\ MetaExpr x ->
       gets (view (prop (Proxy @"metaSorts") <<< at x)) >>= case _ of
         Nothing -> do
@@ -87,9 +91,9 @@ makeSequent s kidsM = do
           unless (expectedKidSort == actualKidSort) do
             throwSortingError $ "The sequent meta variable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
     expectedKidSort /\ kid@(Expr kidS _) -> do
-      let actualKidSort = ctx.sortSystem.sortOfLabel kidS
-      unless (expectedKidSort == actualKidSort) do
-        throwSortingError $ "The sequent " <> ctx.sortSystem.showExpr kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> "."
+      let kidRule = ctx.sortSystem.rules kidS
+      unless (expectedKidSort == kidRule.conclusion) do
+        throwSortingError $ "The sequent " <> ctx.sortSystem.showSequent kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show kidRule.conclusion <> "."
   pure $ Expr s kids
 
 --------------------------------------------------------------------------------
@@ -131,17 +135,19 @@ throwDerivingError message = do
     { message
     }
 
-makeDerivation
-  :: forall m sort s d
-   . Eq s
-  => Show s
-  => MonadReader (DerivingContext sort s d) m
-  => MonadState (DerivingState s d) m
-  => MonadError DerivingError m
-  => d
-  -> Array (m (Derivation d))
-  -> m (Derivation d)
-makeDerivation _l kidsM = do
-  kids <- sequence kidsM
-  unsafeCrashWith "TODO"
+-- makeDerivation
+--   :: forall m sort s d
+--    . Eq s
+--   => Show s
+--   => MonadReader (DerivingContext sort s d) m
+--   => MonadState (DerivingState s d) m
+--   => MonadError DerivingError m
+--   => d
+--   -> Array (m (Derivation d))
+--   -> m (Derivation d)
+-- makeDerivation d kidsM = do
+--   let rule = 
+--   kids <- sequence kidsM
+--   -- unify each kid's conclusion with the corresponding hypothesis of d's rule
+--   unsafeCrashWith "TODO"
 
