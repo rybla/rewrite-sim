@@ -102,46 +102,42 @@ checkSortOfSequent expectedSort sequent =
           throwSortingError $ "A sort with label " <> show l <> " is expected to have " <> show (length kidSorts :: Int) <> " kids of sorts " <> (kidSorts # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
         Array.zip kidSorts kids # traverse_ (uncurry checkSortOfSequent)
 
--- --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
--- type DerivationLabel = ExprLabel
--- type Derivation = AbsExpr
+type DerivationLabel = ExprLabel
+type Derivation = AbsExpr
 
--- type DerivationRule =
---   { label :: ExprLabel
---   , hypotheses :: Array Sequent
---   , conclusion :: Sequent
---   }
+type DerivationRule =
+  { label :: DerivationLabel
+  , hypotheses :: Array Sequent
+  , conclusion :: Sequent
+  }
 
--- type DerivationSystem =
---   { rules :: Array DerivationRule
---   }
+type DerivationSystem =
+  { rules :: Array DerivationRule
+  }
 
--- type SortingState s =
---   { metaVarSorts :: Map MetaVar s }
+type DerivationState s =
+  {}
 
--- type SortingContext s =
---   { sortSystem :: SortSystem s
---   , stack :: List Sequent
---   }
+type DerivationContext s =
+  { sortSystem :: SortSystem s
+  }
 
--- type SortingError =
---   { stack :: List Sequent
---   , message :: String
---   }
+type DerivationError =
+  { message :: String
+  }
 
--- throwSortingError
---   :: forall m s a
---    . MonadReader (SortingContext s) m
---   => MonadError SortingError m
---   => String
---   -> m a
--- throwSortingError message = do
---   ctx <- ask
---   throwError
---     { stack: ctx.stack
---     , message
---     }
+throwDerivationError
+  :: forall m s a
+   . MonadReader (DerivationContext s) m
+  => MonadError DerivationError m
+  => String
+  -> m a
+throwDerivationError message = do
+  throwError
+    { message
+    }
 
 -- checkSortOfSequent
 --   :: forall m s
