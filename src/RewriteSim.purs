@@ -59,14 +59,14 @@ instance Ord MetaVar where
 -- expressions
 ----------------
 
--- | A concrete expression, which CANNOT contain metavariables.
+-- | A concrete expression, which *cannot* contain metavariables.
 type Expr = GenericExpr Void
 
 asExpr :: forall a. Expr a -> a /\ Array (Expr a)
 asExpr (MetaExpr v) = absurd v
 asExpr (Expr a es) = a /\ es
 
--- | An abstract expression, which CAN contain metavariables.
+-- | An abstract expression, which *can* contain metavariables.
 type AbsExpr = GenericExpr MetaVar
 
 collectMetas :: forall x a. Ord x => GenericExpr x a -> Set x
@@ -74,7 +74,7 @@ collectMetas = collectMetas' Set.empty
 
 collectMetas' :: forall x a. Ord x => Set x -> GenericExpr x a -> Set x
 collectMetas' vs (MetaExpr v) = Set.insert v vs
-collectMetas' vs (Expr a es) = foldl collectMetas' vs es
+collectMetas' vs (Expr _ es) = foldl collectMetas' vs es
 
 data GenericExpr x a
   = MetaExpr x
