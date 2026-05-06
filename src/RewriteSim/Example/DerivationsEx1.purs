@@ -2,7 +2,6 @@ module RewriteSim.Example.DerivationsEx1 where
 
 import Prelude
 
-import Control.Alternative (guard)
 import Control.Bind (bindFlipped)
 import Control.Monad.Error.Class (class MonadThrow)
 import Control.Monad.Except (ExceptT, runExceptT)
@@ -12,44 +11,98 @@ import Data.Either (either)
 import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Traversable (traverse)
+import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar(..))
-import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%%))
+import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
 import RewriteSim.Utilities (throw)
 
 --------------------------------------------------------------------------------
 -- Labels
 --------------------------------------------------------------------------------
 
--- sorts
-contextSort = "context" :: String
-typeSort = "type" :: String
-termSort = "term" :: String
-nameSort = "name" :: String
-judgmentSort = "judgment" :: String
+-- Sorts
 
--- sequents
-typingS = "typing" :: String
-nilS = "nil" :: String
-consS = "cons" :: String
-unitS = "unit" :: String
-arrS = "arr" :: String
-varS = "var" :: String
-lamS = "lam" :: String
-appS = "app" :: String
+newtype SortLabel = SortLabel String
 
--- derivations
-lamD = "Lam" :: String
+derive newtype instance Show SortLabel
+derive newtype instance Eq SortLabel
 
--- sequent metavariable
-mvS :: forall m. Monad m => String -> m (Sequent String)
-mvS label = pure $ MetaExpr (MetaVar { label, index: -1 })
+contextSort = SortLabel "context"
+typeSort = SortLabel "type"
+termSort = SortLabel "term"
+nameSort = SortLabel "name"
+judgmentSort = SortLabel "judgment"
+
+-- Sequents
+
+newtype SequentLabel = SequentLabel String
+
+derive newtype instance Show SequentLabel
+derive newtype instance Eq SequentLabel
+
+typingS = SequentLabel "typing"
+nilS = SequentLabel "nil"
+consS = SequentLabel "cons"
+unitS = SequentLabel "unit"
+arrS = SequentLabel "arr"
+varS = SequentLabel "var"
+lamS = SequentLabel "lam"
+appS = SequentLabel "app"
+
+toNameS s = SequentLabel $ "Name:" <> s
+fromNameS (SequentLabel s) = String.stripPrefix (String.Pattern "Name:") s
+
+typing gamma alpha a = typingS %% [ gamma, alpha a ]
+nil = nilS %% []
+cons alpha gamma = consS %% [ alpha, gamma ]
+unit = unitS %% []
+arr a b = arrS %% [ a, b ]
+var x = varS %% [ x ]
+lam x b = lamS %% [ x, b ]
+app f a = appS %% [ f, a ]
+
+-- Derivations
+
+newtype DerivationLabel = DerivationLabel String
+
+derive newtype instance Show DerivationLabel
+derive newtype instance Eq DerivationLabel
+
+nilD = DerivationLabel "nil"
+consD = DerivationLabel "cons"
+
+unitD = DerivationLabel "unit"
+arrD = DerivationLabel "arr"
+
+varD = DerivationLabel "var"
+lamD = DerivationLabel "lam"
+appD = DerivationLabel "app"
+
+toNameD s = DerivationLabel $ "name:" <> s
+fromNameD (DerivationLabel s) = String.stripPrefix (String.Pattern s) s
+
+nil_ = nilD % []
+cons_ alpha gamma = consD % [ alpha, gamma ]
+
+unit_ = unitD % []
+arr_ a b = arrD % [ a, b ]
+
+var_ x = varD % [ x ]
+lam_ x b = lamD % [ x, b ]
+app_ f a = appD % [ f, a ]
+
+name_ s = toNameD s % []
+
+-- | sequent metavariable
+mv :: forall m. Monad m => String -> m (Sequent SequentLabel)
+mv label = pure $ MetaExpr (MetaVar { label, index: -1 })
 
 --------------------------------------------------------------------------------
 
-sequentSystem :: SequentSystem String String
+sequentSystem :: SequentSystem SortLabel SequentLabel
 sequentSystem =
   { rules: case _ of
       -- Judgment
@@ -65,26 +118,27 @@ sequentSystem =
       s | s == lamS -> makeSequentRule [ nameSort, termSort ] termSort
       s | s == appS -> makeSequentRule [ termSort, termSort ] termSort
       -- Name
-      s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] "Name"
+      SequentLabel s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] nameSort
       --   
       s -> unsafeCrashWith $ "Unrecognized sequent label: " <> show s
   , showSequent:
       let
+        showSequent :: Sequent SequentLabel -> String
         showSequent = case _ of
           -- Judgment
-          Expr sq [ g, t, a ] | sq == judgmentSort -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
+          Expr s [ g, t, a ] | s == typingS -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
           -- Ctx
-          Expr sq [] | sq == nilS -> "[]"
-          Expr sq [ t, g ] | sq == consS -> showSequent t <> ", " <> showSequent g
+          Expr s [] | s == nilS -> "[]"
+          Expr s [ t, g ] | s == consS -> showSequent t <> ", " <> showSequent g
           -- Type
-          Expr sq [] | sq == unitS -> "unit"
-          Expr sq [ s, t ] | sq == arrS -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
+          Expr s [] | s == unitS -> "unit"
+          Expr s [ a, b ] | s == arrS -> "(" <> showSequent a <> " -> " <> showSequent b <> ")"
           -- Term
-          Expr sq [ x ] | sq == varS -> showSequent x
-          Expr sq [ x, b ] | sq == lamS -> "lambda " <> showSequent x <> " . " <> showSequent b
-          Expr sq [ f, a ] | sq == appS -> "(" <> showSequent f <> ") " <> showSequent a
+          Expr s [ x ] | s == varS -> showSequent x
+          Expr s [ x, b ] | s == lamS -> "lambda " <> showSequent x <> " . " <> showSequent b
+          Expr s [ f, a ] | s == appS -> "(" <> showSequent f <> ") " <> showSequent a
           -- Name
-          Expr s [] | Just x <- String.stripPrefix (String.Pattern "name:") s -> x
+          Expr s [] | Just x <- fromNameS s -> x
           --
           e -> show e
       in
@@ -92,35 +146,34 @@ sequentSystem =
   }
 
 -- TODO: other derivation rules
-makeDerivationSystem :: forall m. MonadThrow Error m => m (DerivationSystem String String)
+makeDerivationSystem :: forall m. MonadThrow Error m => m (DerivationSystem SequentLabel DerivationLabel)
 makeDerivationSystem = do
   let
     runDerivationRuleM
       :: forall a
-       . ReaderT (DerivationRuleCtx String String) (ExceptT (DerivationRuleError String) m) a
+       . ReaderT (DerivationRuleCtx SortLabel SequentLabel) (ExceptT (DerivationRuleError DerivationLabel) m) a
       -> m a
     runDerivationRuleM m = m
       # flip runReaderT { sequentSystem }
       # runExceptT
-      # bindFlipped (either (\error -> throw $ "Error in derivation rule for derivation label " <> error.derivationLabel <> ": " <> error.message) pure)
+      # bindFlipped (either (\error -> throw $ "Error in derivation rule for derivation label " <> show error.derivationLabel <> ": " <> error.message) pure)
 
   rules <-
     traverse runDerivationRuleM
       [ makeDerivationRule lamD
-          [ typingS %% [ consS %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
-          (typingS %% [ mvS "Gamma", arrS %% [ mvS "A", mvS "B" ], lamS %% [ mvS "x", mvS "b" ] ])
+          [ typingS %% [ consS %% [ mv "A", mv "Gamma" ], mv "B", mv "b" ] ]
+          (typingS %% [ mv "Gamma", arrS %% [ mv "A", mv "B" ], lamS %% [ mv "x", mv "b" ] ])
       ]
   pure
     { rules: \d ->
-        case
-          rules # Array.findMap
-            ( \(d' /\ rule) -> do
-                guard (d == d')
-                pure rule
-            )
-          of
-          Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> show d
+        case rules # Array.find (\(d' /\ _) -> d == d') # map snd of
           Just rule -> rule
+          -- name rule family
+          Nothing | Just s <- fromNameD d ->
+            { hypotheses: []
+            , conclusion: Expr (toNameS s) []
+            }
+          Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> show d
     , showDerivation:
         let
           showDerivation = case _ of
