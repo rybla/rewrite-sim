@@ -19,21 +19,38 @@ import RewriteSim.Example.Library.Derivations (DerivationRuleContext, Derivation
 mvS :: forall m. Monad m => String -> m (Sequent String)
 mvS label = pure $ MetaExpr (MetaVar { label, index: 0 })
 
+context = "context"
+typ = "type"
+term = "term"
+name = "name"
+judgment = "judgment"
+
+typing = "typing"
+nil = "nil"
+cons = "cons"
+unit = "unit"
+arr = "arr"
+var = "var"
+lam = "lam"
+app = "app"
+
+lamD = "Lam"
+
 sequentSystem :: SequentSystem String String
 sequentSystem =
   { rules: case _ of
       -- Judgment
-      "typing" -> makeSequentRule [ "Context", "Type", "Term" ] "Judgment"
+      s | s == typing -> makeSequentRule [ context, typ, term ] judgment
       -- Context
-      "nil" -> makeSequentRule [] "Context"
-      "cons" -> makeSequentRule [ "Type", "Context" ] "Context"
+      s | s == nil -> makeSequentRule [] context
+      s | s == cons -> makeSequentRule [ typ, context ] context
       -- Type
-      "unit" -> makeSequentRule [] "Type"
-      "arr" -> makeSequentRule [ "Type", "Type" ] "Type"
+      s | s == unit -> makeSequentRule [] typ
+      s | s == arr -> makeSequentRule [ typ, typ ] "Type"
       -- Term
-      "var" -> makeSequentRule [ "Name" ] "Term"
-      "lam" -> makeSequentRule [ "Name", "Term" ] "Term"
-      "app" -> makeSequentRule [ "Term", "Term" ] "Term"
+      s | s == var -> makeSequentRule [ name ] term
+      s | s == lam -> makeSequentRule [ name, term ] term
+      s | s == app -> makeSequentRule [ term, term ] term
       -- Name
       s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] "Name"
       --   
@@ -42,17 +59,17 @@ sequentSystem =
       let
         showSequent = case _ of
           -- Judgment
-          Expr "typing" [ g, t, a ] -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
+          Expr sq [ g, t, a ] | sq == judgment -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
           -- Context
-          Expr "nil" [] -> "[]"
-          Expr "cons" [ t, g ] -> showSequent t <> ", " <> showSequent g
+          Expr sq [] | sq == nil -> "[]"
+          Expr sq [ t, g ] | sq == cons -> showSequent t <> ", " <> showSequent g
           -- Type
-          Expr "unit" [] -> "unit"
-          Expr "arr" [ s, t ] -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
+          Expr sq [] | sq == unit -> "unit"
+          Expr sq [ s, t ] | sq == arr -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
           -- Term
-          Expr "var" [ x ] -> showSequent x
-          Expr "lam" [ x, b ] -> "lambda " <> showSequent x <> " . " <> showSequent b
-          Expr "app" [ f, a ] -> "(" <> showSequent f <> ") " <> showSequent a
+          Expr sq [ x ] | sq == var -> showSequent x
+          Expr sq [ x, b ] | sq == lam -> "lambda " <> showSequent x <> " . " <> showSequent b
+          Expr sq [ f, a ] | sq == app -> "(" <> showSequent f <> ") " <> showSequent a
           -- Name
           Expr s [] | Just x <- String.stripPrefix (String.Pattern "name:") s -> x
           --
@@ -76,9 +93,9 @@ derivationSystem =
   { rules:
       let
         rules = map runDerivationRuleM
-          [ makeDerivationRule "Lam"
-              [ "typing" %% [ "cons" %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
-              ("typing" %% [ mvS "Gamma", "arr" %% [ mvS "A", mvS "B" ], "lam" %% [ mvS "x", mvS "b" ] ])
+          [ makeDerivationRule lamD
+              [ typing %% [ cons %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
+              (typing %% [ mvS "Gamma", arr %% [ mvS "A", mvS "B" ], lam %% [ mvS "x", mvS "b" ] ])
           ]
       in
         \d ->
@@ -94,7 +111,7 @@ derivationSystem =
   , showDerivation:
       let
         showDerivation = case _ of
-          Expr "Lam" [ x, b ] -> "lambda " <> showDerivation x <> " . " <> showDerivation b
+          Expr d [ x, b ] | d == lamD -> "lambda " <> showDerivation x <> " . " <> showDerivation b
           e -> show e
       in
         showDerivation
