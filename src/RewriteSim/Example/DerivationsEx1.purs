@@ -1,6 +1,6 @@
 module RewriteSim.Example.DerivationsEx1 where
 
-import Prelude
+import Prelude hiding (zero)
 
 import Control.Bind (bindFlipped)
 import Control.Monad.Error.Class (class MonadThrow)
@@ -17,6 +17,7 @@ import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar(..))
 import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
+import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (throw)
 
 --------------------------------------------------------------------------------
@@ -28,12 +29,13 @@ import RewriteSim.Utilities (throw)
 newtype SortLabel = SortLabel String
 
 derive newtype instance Show SortLabel
+derive newtype instance Pretty SortLabel
 derive newtype instance Eq SortLabel
 
 contextSort = SortLabel "context"
 typeSort = SortLabel "type"
+varSort = SortLabel "var"
 termSort = SortLabel "term"
-nameSort = SortLabel "name"
 judgmentSort = SortLabel "judgment"
 
 -- Sequents
@@ -41,27 +43,31 @@ judgmentSort = SortLabel "judgment"
 newtype SequentLabel = SequentLabel String
 
 derive newtype instance Show SequentLabel
+derive newtype instance Pretty SequentLabel
 derive newtype instance Eq SequentLabel
 
 typingS = SequentLabel "typing"
+typingVarS = SequentLabel "typingVar"
 nilS = SequentLabel "nil"
 consS = SequentLabel "cons"
 unitS = SequentLabel "unit"
 arrS = SequentLabel "arr"
+zeroS = SequentLabel "zero"
+sucS = SequentLabel "suc"
 varS = SequentLabel "var"
 lamS = SequentLabel "lam"
 appS = SequentLabel "app"
 
-toNameS s = SequentLabel $ "Name:" <> s
-fromNameS (SequentLabel s) = String.stripPrefix (String.Pattern "Name:") s
-
-typing gamma alpha a = typingS %% [ gamma, alpha a ]
+typing gamma alpha a = typingS %% [ gamma, alpha, a ]
+typingVar gamma alpha x = typingVarS %% [ gamma, alpha, x ]
 nil = nilS %% []
 cons alpha gamma = consS %% [ alpha, gamma ]
+zero = zeroS %% []
+suc x = sucS %% [ x ]
 unit = unitS %% []
 arr a b = arrS %% [ a, b ]
 var x = varS %% [ x ]
-lam x b = lamS %% [ x, b ]
+lam b = lamS %% [ b ]
 app f a = appS %% [ f, a ]
 
 -- Derivations
@@ -69,32 +75,28 @@ app f a = appS %% [ f, a ]
 newtype DerivationLabel = DerivationLabel String
 
 derive newtype instance Show DerivationLabel
+derive newtype instance Pretty DerivationLabel
 derive newtype instance Eq DerivationLabel
 
 nilD = DerivationLabel "nil"
 consD = DerivationLabel "cons"
-
 unitD = DerivationLabel "unit"
 arrD = DerivationLabel "arr"
-
+zeroD = DerivationLabel "zero"
+sucD = DerivationLabel "suc"
 varD = DerivationLabel "var"
 lamD = DerivationLabel "lam"
 appD = DerivationLabel "app"
 
-toNameD s = DerivationLabel $ "name:" <> s
-fromNameD (DerivationLabel s) = String.stripPrefix (String.Pattern s) s
-
 nil_ = nilD % []
 cons_ alpha gamma = consD % [ alpha, gamma ]
-
 unit_ = unitD % []
 arr_ a b = arrD % [ a, b ]
-
+zero_ = zeroD % []
+suc_ x = sucD % [ x ]
 var_ x = varD % [ x ]
-lam_ x b = lamD % [ x, b ]
+lam_ b = lamD % [ b ]
 app_ f a = appD % [ f, a ]
-
-name_ s = toNameD s % []
 
 -- | sequent metavariable
 mv :: forall m. Monad m => String -> m (Sequent SequentLabel)
@@ -107,42 +109,42 @@ sequentSystem =
   { rules: case _ of
       -- Judgment
       s | s == typingS -> makeSequentRule [ contextSort, typeSort, termSort ] judgmentSort
+      s | s == typingVarS -> makeSequentRule [ contextSort, typeSort, varSort ] judgmentSort
       -- Ctx
       s | s == nilS -> makeSequentRule [] contextSort
       s | s == consS -> makeSequentRule [ typeSort, contextSort ] contextSort
       -- Type
       s | s == unitS -> makeSequentRule [] typeSort
       s | s == arrS -> makeSequentRule [ typeSort, typeSort ] typeSort
+      -- Var
+      s | s == zeroS -> makeSequentRule [] varSort
+      s | s == sucS -> makeSequentRule [ varSort ] varSort
       -- Term
-      s | s == varS -> makeSequentRule [ nameSort ] termSort
-      s | s == lamS -> makeSequentRule [ nameSort, termSort ] termSort
+      s | s == varS -> makeSequentRule [ varSort ] termSort
+      s | s == lamS -> makeSequentRule [ termSort ] termSort
       s | s == appS -> makeSequentRule [ termSort, termSort ] termSort
-      -- Name
-      SequentLabel s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] nameSort
       --   
-      s -> unsafeCrashWith $ "Unrecognized sequent label: " <> show s
-  , showSequent:
+      s -> unsafeCrashWith $ "Unrecognized sequent label: " <> pretty s
+  , prettySequent:
       let
-        showSequent :: Sequent SequentLabel -> String
-        showSequent = case _ of
+        prettySequent :: Sequent SequentLabel -> String
+        prettySequent = case _ of
           -- Judgment
-          Expr s [ g, t, a ] | s == typingS -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
+          Expr s [ g, t, a ] | s == typingS -> prettySequent g <> " |- " <> prettySequent a <> " : " <> prettySequent t
           -- Ctx
           Expr s [] | s == nilS -> "[]"
-          Expr s [ t, g ] | s == consS -> showSequent t <> ", " <> showSequent g
+          Expr s [ t, g ] | s == consS -> prettySequent t <> ", " <> prettySequent g
           -- Type
           Expr s [] | s == unitS -> "unit"
-          Expr s [ a, b ] | s == arrS -> "(" <> showSequent a <> " -> " <> showSequent b <> ")"
+          Expr s [ a, b ] | s == arrS -> "(" <> prettySequent a <> " -> " <> prettySequent b <> ")"
           -- Term
-          Expr s [ x ] | s == varS -> showSequent x
-          Expr s [ x, b ] | s == lamS -> "lambda " <> showSequent x <> " . " <> showSequent b
-          Expr s [ f, a ] | s == appS -> "(" <> showSequent f <> ") " <> showSequent a
-          -- Name
-          Expr s [] | Just x <- fromNameS s -> x
+          Expr s [ x ] | s == varS -> prettySequent x
+          Expr s [ b ] | s == lamS -> "λ " <> prettySequent b
+          Expr s [ f, a ] | s == appS -> "(" <> prettySequent f <> ") " <> prettySequent a
           --
-          e -> show e
+          e -> pretty e
       in
-        showSequent
+        prettySequent
   }
 
 -- TODO: other derivation rules
@@ -156,30 +158,37 @@ makeDerivationSystem = do
     runDerivationRuleM m = m
       # flip runReaderT { sequentSystem }
       # runExceptT
-      # bindFlipped (either (\error -> throw $ "Error in derivation rule for derivation label " <> show error.derivationLabel <> ": " <> error.message) pure)
+      # bindFlipped (either (\error -> throw $ "Error in derivation rule for derivation label " <> pretty error.derivationLabel <> ": " <> error.message) pure)
 
   rules <-
     traverse runDerivationRuleM
-      [ makeDerivationRule lamD
-          [ typingS %% [ consS %% [ mv "A", mv "Gamma" ], mv "B", mv "b" ] ]
-          (typingS %% [ mv "Gamma", arrS %% [ mv "A", mv "B" ], lamS %% [ mv "x", mv "b" ] ])
+      [ makeDerivationRule zeroD
+          []
+          (typingVar (cons (mv "alpha") (mv "gamma")) (mv "alpha") zero)
+      , makeDerivationRule sucD
+          [ typingVar (mv "gamma") (mv "alpha") (mv "x") ]
+          (typingVar (cons (mv "beta") (mv "gamma")) (mv "alpha") (suc (mv "x")))
+      , makeDerivationRule varD
+          [ typingVar (mv "gamma") (mv "alpha") (mv "x") ]
+          (typing (mv "gamma") (mv "alpha") (var (mv "x")))
+      , makeDerivationRule lamD
+          [ typing (cons (mv "alpha") (mv "gamma")) (mv "beta") (mv "b") ]
+          (typing (mv "gamma") (arr (mv "alpha") (mv "beta")) (lam (mv "b")))
       ]
   pure
     { rules: \d ->
         case rules # Array.find (\(d' /\ _) -> d == d') # map snd of
           Just rule -> rule
-          -- name rule family
-          Nothing | Just s <- fromNameD d ->
-            { hypotheses: []
-            , conclusion: Expr (toNameS s) []
-            }
-          Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> show d
-    , showDerivation:
+          Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> pretty d
+    , prettyDerivation:
         let
-          showDerivation = case _ of
-            Expr d [ x, b ] | d == lamD -> "lambda " <> showDerivation x <> " . " <> showDerivation b
-            e -> show e
+          prettyDerivation = case _ of
+            Expr d [] | d == zeroD -> "z"
+            Expr d [ x ] | d == sucD -> "s" <> prettyDerivation x
+            Expr d [ x ] | d == varD -> "v" <> prettyDerivation x
+            Expr d [ b ] | d == lamD -> "λ " <> prettyDerivation b
+            e -> pretty e
         in
-          showDerivation
+          prettyDerivation
     }
 

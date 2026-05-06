@@ -4,13 +4,14 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow)
 import Control.Monad.Except (ExceptT)
-import Control.Monad.Reader (ReaderT, runReaderT)
+import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.State (StateT, evalStateT)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
+import Effect.Class.Console as Console
 import Effect.Exception (Error)
-import RewriteSim.Example.DerivationsEx1 (DerivationLabel(..), SequentLabel(..), SortLabel(..), lam_, makeDerivationSystem, name_, sequentSystem, var_)
-import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, newDerivingCtx, newDerivingEnv, (%))
+import RewriteSim.Example.DerivationsEx1 (DerivationLabel, SequentLabel, SortLabel, lam_, makeDerivationSystem, sequentSystem, var_, zero_)
+import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, newDerivingCtx, newDerivingEnv)
 import RewriteSim.Utilities (runExceptThrow)
 import Test.Spec (SpecT, beforeAll, describe, it)
 
@@ -32,9 +33,18 @@ spec =
             # flip runReaderT (newDerivingCtx { sequentSystem, derivationSystem: ctx.derivationSystem })
             # flip evalStateT (newDerivingEnv {})
             # runExceptThrow (\error -> "Deriving error: " <> error.message)
+
       it "rules" $ runDerivingTest $ do
         pure unit
+
       describe "derivations" do
-        it "lam" $ runDerivingTest $ do
-          d /\ s <- lam_ (name_ "x") (var_ (name_ "x"))
-          pure unit
+        let
+          makeTest m = runDerivingTest do
+            ctx <- ask
+            d /\ s <- m
+            Console.log $ "d = " <> ctx.derivationSystem.prettyDerivation d
+            Console.log $ "s = " <> ctx.sequentSystem.prettySequent s
+            pure unit
+
+        it "vz" $ makeTest $ var_ zero_
+        it "lam" $ makeTest $ lam_ (var_ zero_)

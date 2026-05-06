@@ -19,6 +19,7 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
+import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (subStateT)
 import Type.Proxy (Proxy(..))
 
@@ -44,7 +45,7 @@ makeSequentRule hypotheses conclusion = { hypotheses, conclusion }
 
 type SequentSystem sort s =
   { rules :: s -> SequentRule sort
-  , showSequent :: Sequent s -> String
+  , prettySequent :: Sequent s -> String
   }
 
 type SequentM sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
@@ -95,8 +96,10 @@ infix 1 makeSequent as %%
 makeSequent
   :: forall m sort s
    . Show sort
+  => Pretty sort
   => Eq sort
   => Show s
+  => Pretty s
   => MonadReader (SequentCtx sort s) m
   => MonadState (SequentEnv sort s) m
   => MonadError (SequentError s) m
@@ -108,7 +111,7 @@ makeSequent s kidsM = do
   kids <- sequence kidsM
   let rule = ctx.sequentSystem.rules s
   unless (length rule.hypotheses == (length kids :: Int)) do
-    throwSequentError $ "A sequent with label " <> show s <> " is expected to have " <> show (length rule.hypotheses :: Int) <> " kids of sorts " <> (rule.hypotheses # map show # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> show (length kids :: Int) <> " kids."
+    throwSequentError $ "A sequent with label " <> pretty s <> " is expected to have " <> pretty (length rule.hypotheses :: Int) <> " kids of sorts " <> (rule.hypotheses # map pretty # intercalate ", " # \s' -> "[" <> s' <> "]") <> " but it actually has " <> pretty (length kids :: Int) <> " kids."
   Array.zip rule.hypotheses kids # traverse_ case _ of
     expectedKidSort /\ MetaExpr x ->
       gets (view (prop (Proxy @"metaSorts") <<< at x)) >>= case _ of
@@ -116,11 +119,11 @@ makeSequent s kidsM = do
           prop (Proxy @"metaSorts") <<< at x .= Just expectedKidSort
         Just actualKidSort -> do
           unless (expectedKidSort == actualKidSort) do
-            throwSequentError $ "The sequent metavariable " <> show x <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show actualKidSort <> " as inferred from its other appearances."
+            throwSequentError $ "The sequent metavariable " <> pretty x <> " is expected to have sort " <> pretty expectedKidSort <> " but it actually has sort " <> pretty actualKidSort <> " as inferred from its other appearances."
     expectedKidSort /\ kid@(Expr kidS _) -> do
       let kidRule = ctx.sequentSystem.rules kidS
       unless (expectedKidSort == kidRule.conclusion) do
-        throwSequentError $ "The sequent " <> ctx.sequentSystem.showSequent kid <> " is expected to have sort " <> show expectedKidSort <> " but it actually has sort " <> show kidRule.conclusion <> "."
+        throwSequentError $ "The sequent " <> ctx.sequentSystem.prettySequent kid <> " is expected to have sort " <> pretty expectedKidSort <> " but it actually has sort " <> pretty kidRule.conclusion <> "."
   pure $ Expr s kids
 
 --------------------------------------------------------------------------------
@@ -138,7 +141,7 @@ type DerivationRule s =
 
 type DerivationSystem s d =
   { rules :: d -> DerivationRule s
-  , showDerivation :: Derivation d -> String
+  , prettyDerivation :: Derivation d -> String
   }
 
 type DerivationRuleCtx sort s =
@@ -251,10 +254,10 @@ makeDerivation d kidsM = do
   unificationEnv <- Array.zip hypotheses kids
     #
       ( traverse_ case _ of
-          _ /\ (MetaExpr x /\ _) -> throwError { message: "A metavariable, " <> show x <> ", appeared as a hypothesis of a derivation rule. You _cannot_ use metavariables in place of derivations." }
+          _ /\ (MetaExpr x /\ _) -> throwError { message: "A metavariable, " <> pretty x <> ", appeared as a hypothesis of a derivation rule. You _cannot_ use metavariables in place of derivations." }
           expectedKidSequent /\ (kid /\ actualKidSequent) -> do
             unify expectedKidSequent actualKidSequent
-              # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.showDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.showSequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.showSequent error.e1 <> " with " <> ctx.sequentSystem.showSequent error.e2 <> " because " <> error.reason })
+              # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.prettyDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.prettySequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.prettySequent error.e1 <> " with " <> ctx.sequentSystem.prettySequent error.e2 <> " because " <> error.reason })
       )
     # flip execStateT (newUnificationEnv {})
 

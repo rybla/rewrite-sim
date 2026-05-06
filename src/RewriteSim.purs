@@ -36,6 +36,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
+import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (ignore, subReaderT, subStateT)
 import Type.Proxy (Proxy(..))
 
@@ -49,6 +50,9 @@ derive instance Generic MetaVar _
 
 instance Show MetaVar where
   show x = genericShow x
+
+instance Pretty MetaVar where
+  pretty (MetaVar v) = v.label <> if v.index == -1 then "" else "@" <> show v.index
 
 instance Eq MetaVar where
   eq x = genericEq x
@@ -94,6 +98,10 @@ instance (Eq x, Eq a) => Eq (GenericExpr x a) where
 
 instance (Show x, Show a) => Show (GenericExpr x a) where
   show x = genericShow x
+
+instance (Pretty x, Pretty a) => Pretty (GenericExpr x a) where
+  pretty (Expr a es) = "(" <> pretty a <> " % " <> pretty es <> ")"
+  pretty (MetaExpr x) = pretty x
 
 me :: forall a. String -> AbsExpr a
 me label = MetaExpr (mv label)
