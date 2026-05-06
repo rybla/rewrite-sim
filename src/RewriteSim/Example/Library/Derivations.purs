@@ -184,9 +184,29 @@ type DerivingEnv s d =
   , unificationEnv :: UnificationEnv s
   }
 
+newDerivingEnv
+  :: forall s d
+   . {}
+  -> DerivingEnv s d
+newDerivingEnv {} =
+  { metaSub: Map.empty
+  , unificationEnv: newUnificationEnv {}
+  }
+
 type DerivingCtx sort s d =
   { sequentSystem :: SequentSystem sort s
   , derivationSystem :: DerivationSystem s d
+  }
+
+newDerivingCtx
+  :: forall sort s d
+   . { sequentSystem :: SequentSystem sort s
+     , derivationSystem :: DerivationSystem s d
+     }
+  -> DerivingCtx sort s d
+newDerivingCtx { sequentSystem, derivationSystem } =
+  { sequentSystem
+  , derivationSystem
   }
 
 type DerivingError =

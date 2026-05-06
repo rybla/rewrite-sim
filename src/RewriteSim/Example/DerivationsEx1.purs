@@ -1,4 +1,4 @@
-module RewriteSim.Example.DerivationsEx1 (sequentSystem, makeDerivationSystem) where
+module RewriteSim.Example.DerivationsEx1 where
 
 import Prelude
 

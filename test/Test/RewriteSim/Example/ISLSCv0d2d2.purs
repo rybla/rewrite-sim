@@ -3,13 +3,14 @@ module Test.RewriteSim.Example.ISLSCv0d2d2 where
 import Prelude
 
 import Control.Monad.Except (runExceptT)
+import Effect.Aff (Aff)
 import RewriteSim.Example.Common (me)
 import RewriteSim.Example.ISLSCv0d2d2 (deBruijn_v1, fromMetaGenericTermDerExpr, oneDer_v0, oneDer_v1, oneDer_v2, twoDer_v0, twoDer_v1, twoDer_v2, zeroDer, zeroDerM)
 import RewriteSim.Utilities (runIdentity)
-import Test.Spec (Spec, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: Spec Unit
+spec :: forall g. Monad g => SpecT Aff Unit g Unit
 spec = do
   describe "ISLSC-0.2.2" do
 

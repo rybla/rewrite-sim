@@ -4,12 +4,14 @@ import Prelude
 
 import Control.Bind (bindFlipped)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
+import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.State (class MonadState, StateT, gets, modify_, runStateT)
+import Data.Either (either)
 import Data.Identity (Identity)
 import Data.Newtype (unwrap)
 import Data.Tuple.Nested (type (/\), (/\))
-import Effect.Exception (Error, error, throwException)
+import Effect.Exception (Error, error)
 
 subReaderT :: forall ctx ctx' m a. MonadReader ctx m => (ctx -> ctx') -> ReaderT ctx' m a -> m a
 subReaderT f m = do
@@ -47,3 +49,6 @@ applyM = bindFlipped
 
 throw :: forall m a. MonadThrow Error m => String -> m a
 throw = throwError <<< error
+
+runExceptThrow :: forall m a e. MonadThrow Error m => (e -> String) -> ExceptT e m a -> m a
+runExceptThrow f = runExceptT >>> bindFlipped (either (f >>> throw) pure)
