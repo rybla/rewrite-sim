@@ -41,9 +41,9 @@ spec =
         let
           makeTest m = runDerivingTest do
             ctx <- ask
-            d /\ s <- m
-            Console.log $ "d = " <> ctx.derivationSystem.prettyDerivation d
-            Console.log $ "s = " <> ctx.sequentSystem.prettySequent s
+            derivation /\ sequent <- m
+            Console.log $ "derivation = " <> ctx.derivationSystem.prettyDerivation derivation
+            Console.log $ "sequent = " <> ctx.sequentSystem.prettySequent sequent
             pure unit
 
         it "vz" $ makeTest $ var_ zero_

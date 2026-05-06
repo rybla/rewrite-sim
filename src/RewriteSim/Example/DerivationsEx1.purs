@@ -9,7 +9,6 @@ import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.Array as Array
 import Data.Either (either)
 import Data.Maybe (Maybe(..))
-import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
@@ -130,13 +129,14 @@ sequentSystem =
         prettySequent :: Sequent SequentLabel -> String
         prettySequent = case _ of
           -- Judgment
-          Expr s [ g, t, a ] | s == typingS -> prettySequent g <> " |- " <> prettySequent a <> " : " <> prettySequent t
+          Expr s [ gamma, alpha, a ] | s == typingS -> prettySequent gamma <> " |- " <> prettySequent a <> " : " <> prettySequent alpha
+          Expr s [ gamma, alpha, x ] | s == typingVarS -> prettySequent gamma <> " |-_var " <> prettySequent x <> " : " <> prettySequent alpha
           -- Ctx
           Expr s [] | s == nilS -> "[]"
-          Expr s [ t, g ] | s == consS -> prettySequent t <> ", " <> prettySequent g
+          Expr s [ alpha, gamma ] | s == consS -> prettySequent alpha <> ", " <> prettySequent gamma
           -- Type
           Expr s [] | s == unitS -> "unit"
-          Expr s [ a, b ] | s == arrS -> "(" <> prettySequent a <> " -> " <> prettySequent b <> ")"
+          Expr s [ alpha, beta ] | s == arrS -> "(" <> prettySequent alpha <> " -> " <> prettySequent beta <> ")"
           -- Term
           Expr s [ x ] | s == varS -> prettySequent x
           Expr s [ b ] | s == lamS -> "λ " <> prettySequent b
