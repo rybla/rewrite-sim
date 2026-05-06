@@ -3,11 +3,13 @@ module RewriteSim.Utilities where
 import Prelude
 
 import Control.Bind (bindFlipped)
+import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.State (class MonadState, StateT, gets, modify_, runStateT)
 import Data.Identity (Identity)
 import Data.Newtype (unwrap)
 import Data.Tuple.Nested (type (/\), (/\))
+import Effect.Exception (Error, error, throwException)
 
 subReaderT :: forall ctx ctx' m a. MonadReader ctx m => (ctx -> ctx') -> ReaderT ctx' m a -> m a
 subReaderT f m = do
@@ -42,3 +44,6 @@ apply2M f ma mb = do
 
 applyM :: forall m a b. Monad m => (a -> m b) -> m a -> m b
 applyM = bindFlipped
+
+throw :: forall m a. MonadThrow Error m => String -> m a
+throw = throwError <<< error
