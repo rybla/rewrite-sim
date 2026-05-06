@@ -42,7 +42,7 @@ lamD = "Lam" :: String
 
 -- sequent metavariable
 mvS :: forall m. Monad m => String -> m (Sequent String)
-mvS label = pure $ MetaExpr (MetaVar { label, index: 0 })
+mvS label = pure $ MetaExpr (MetaVar { label, index: -1 })
 
 --------------------------------------------------------------------------------
 

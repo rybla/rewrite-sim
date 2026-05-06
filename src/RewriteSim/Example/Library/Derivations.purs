@@ -15,10 +15,11 @@ import Data.Lens.Record (prop)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Traversable (sequence)
+import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
-import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, newUnificationEnv, substAbsExpr, unify)
+import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
+import RewriteSim.Utilities (subStateT)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -46,30 +47,30 @@ type SequentSystem sort s =
   , showSequent :: Sequent s -> String
   }
 
-type SequentM sort s m = ReaderT (SequentContext sort s) (StateT (SequentState sort s) (ExceptT (SequentError s) m))
+type SequentM sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
 
-type SequentState :: Type -> Type -> Type
-type SequentState sort s =
+type SequentEnv :: Type -> Type -> Type
+type SequentEnv sort s =
   { metaSorts :: Map MetaVar sort
   }
 
-newSequentState
+newSequentEnv
   :: forall sort s
    . {}
-  -> SequentState sort s
-newSequentState {} =
+  -> SequentEnv sort s
+newSequentEnv {} =
   { metaSorts: Map.empty
   }
 
-type SequentContext sort s =
+type SequentCtx sort s =
   { sequentSystem :: SequentSystem sort s
   }
 
-newSequentContext
+newSequentCtx
   :: forall sort s
    . { sequentSystem :: SequentSystem sort s }
-  -> SequentContext sort s
-newSequentContext { sequentSystem } =
+  -> SequentCtx sort s
+newSequentCtx { sequentSystem } =
   { sequentSystem
   }
 
@@ -80,7 +81,7 @@ type SequentError s =
 
 throwSequentError
   :: forall m sort s a
-   . MonadReader (SequentContext sort s) m
+   . MonadReader (SequentCtx sort s) m
   => MonadError (SequentError s) m
   => String
   -> m a
@@ -96,8 +97,8 @@ makeSequent
    . Show sort
   => Eq sort
   => Show s
-  => MonadReader (SequentContext sort s) m
-  => MonadState (SequentState sort s) m
+  => MonadReader (SequentCtx sort s) m
+  => MonadState (SequentEnv sort s) m
   => MonadError (SequentError s) m
   => s
   -> Array (m (Sequent s))
@@ -140,7 +141,7 @@ type DerivationSystem s d =
   , showDerivation :: Derivation d -> String
   }
 
-type DerivationRuleContext sort s =
+type DerivationRuleCtx sort s =
   { sequentSystem :: SequentSystem sort s
   }
 
@@ -151,7 +152,7 @@ type DerivationRuleError d =
 
 makeDerivationRule
   :: forall sort s d m
-   . MonadReader (DerivationRuleContext sort s) m
+   . MonadReader (DerivationRuleCtx sort s) m
   => MonadThrow (DerivationRuleError d) m
   => d
   -> Array (SequentM sort s m (Sequent s))
@@ -163,11 +164,11 @@ makeDerivationRule d hypothesesM conclusionM = do
     runSequentM :: forall a. SequentM sort s m a -> m a
     runSequentM m = m
       # flip runReaderT
-          ( newSequentContext
+          ( newSequentCtx
               { sequentSystem: ctx.sequentSystem
               }
           )
-      # flip evalStateT (newSequentState {})
+      # flip evalStateT (newSequentEnv {})
       # mapThrow
           ( \error ->
               { derivationLabel: d
@@ -177,12 +178,13 @@ makeDerivationRule d hypothesesM conclusionM = do
   hypotheses /\ conclusion <- runSequentM $ Tuple <$> sequence hypothesesM <*> conclusionM
   pure $ d /\ { hypotheses, conclusion }
 
-type DerivingState :: Type -> Type -> Type
-type DerivingState s d =
+type DerivingEnv :: Type -> Type -> Type
+type DerivingEnv s d =
   { metaSub :: Map MetaVar (Sequent s)
+  , unificationEnv :: UnificationEnv s
   }
 
-type DerivingContext sort s d =
+type DerivingCtx sort s d =
   { sequentSystem :: SequentSystem sort s
   , derivationSystem :: DerivationSystem s d
   }
@@ -193,7 +195,7 @@ type DerivingError =
 
 throwDerivingError
   :: forall m sort s d a
-   . MonadReader (DerivingContext sort s d) m
+   . MonadReader (DerivingCtx sort s d) m
   => MonadError DerivingError m
   => String
   -> m a
@@ -204,21 +206,29 @@ throwDerivingError message = do
 
 infix 1 makeDerivation as %
 
--- TODO: freshen metavars
 makeDerivation
   :: forall m sort s d
    . Eq s
-  => MonadReader (DerivingContext sort s d) m
-  => MonadState (DerivingState s d) m
+  => MonadReader (DerivingCtx sort s d) m
+  => MonadState (DerivingEnv s d) m
   => MonadError DerivingError m
   => d
   -> Array (m (DerivationAndSequent s d))
   -> m (DerivationAndSequent s d)
 makeDerivation d kidsM = do
   ctx <- ask
+
+  let
+    subUnificationM :: forall a. StateT (UnificationEnv _) m a -> m a
+    subUnificationM = subStateT
+      _.unificationEnv
+      (\unificationEnv -> _ { unificationEnv = unificationEnv })
+
   let rule = ctx.derivationSystem.rules d
+  hypotheses <- traverse freshenAbsExpr rule.hypotheses # subUnificationM
+  conclusion <- freshenAbsExpr rule.conclusion # subUnificationM
   kids <- sequence kidsM
-  unificationEnv <- Array.zip rule.hypotheses kids
+  unificationEnv <- Array.zip hypotheses kids
     #
       ( traverse_ case _ of
           _ /\ (MetaExpr x /\ _) -> throwError { message: "A metavariable, " <> show x <> ", appeared as a hypothesis of a derivation rule. You _cannot_ use metavariables in place of derivations." }
@@ -227,5 +237,6 @@ makeDerivation d kidsM = do
               # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.showDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.showSequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.showSequent error.e1 <> " with " <> ctx.sequentSystem.showSequent error.e2 <> " because " <> error.reason })
       )
     # flip execStateT (newUnificationEnv {})
-  let conclusionSequent = substAbsExpr unificationEnv.sigma rule.conclusion
+  let conclusionSequent = substAbsExpr unificationEnv.sigma conclusion
   pure $ Expr d (kids # map fst) /\ conclusionSequent
+

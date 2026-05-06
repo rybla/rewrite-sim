@@ -14,8 +14,15 @@ subReaderT f m = do
   ctx' <- asks f
   m # flip runReaderT ctx'
 
-subStateT :: forall env env' m a. MonadState env m => (env -> env') -> (env' -> env -> env) -> StateT env' m a -> m (a /\ env')
+subStateT :: forall env env' m a. MonadState env m => (env -> env') -> (env' -> env -> env) -> StateT env' m a -> m a
 subStateT f g m = do
+  env0 <- gets f
+  a /\ env1 <- m # flip runStateT env0
+  modify_ $ g env1
+  pure a
+
+subStateT' :: forall env env' m a. MonadState env m => (env -> env') -> (env' -> env -> env) -> StateT env' m a -> m (a /\ env')
+subStateT' f g m = do
   env0 <- gets f
   a /\ env1 <- m # flip runStateT env0
   modify_ $ g env1
@@ -35,4 +42,3 @@ apply2M f ma mb = do
 
 applyM :: forall m a b. Monad m => (a -> m b) -> m a -> m b
 applyM = bindFlipped
-

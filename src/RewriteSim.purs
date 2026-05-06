@@ -6,7 +6,7 @@ import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, execStateT, get, gets, modify_)
+import Control.Monad.State (class MonadState, execStateT, get, gets, modify, modify_)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap, rmap)
@@ -14,7 +14,7 @@ import Data.Either (Either(..))
 import Data.Eq.Generic (genericEq)
 import Data.Foldable (fold, foldl, length, null, traverse_)
 import Data.Generic.Rep (class Generic)
-import Data.Lens (view, (.=))
+import Data.Lens (view, (%=), (.=))
 import Data.Lens.At (at)
 import Data.Lens.Record (prop)
 import Data.List (List)
@@ -26,6 +26,7 @@ import Data.Ord.Generic (genericCompare)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
+import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (uncurry)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -38,9 +39,9 @@ import Record as Record
 import RewriteSim.Utilities (ignore, subReaderT, subStateT)
 import Type.Proxy (Proxy(..))
 
-----------------
+--------------------------------------------------------------------------------
 -- metavariables
-----------------
+--------------------------------------------------------------------------------
 
 newtype MetaVar = MetaVar { label :: String, index :: Int }
 
@@ -55,9 +56,9 @@ instance Eq MetaVar where
 instance Ord MetaVar where
   compare x = genericCompare x
 
-----------------
+--------------------------------------------------------------------------------
 -- expressions
-----------------
+--------------------------------------------------------------------------------
 
 -- | A concrete expression, which *cannot* contain metavariables.
 type Expr = GenericExpr Void
@@ -98,7 +99,7 @@ me :: forall a. String -> AbsExpr a
 me label = MetaExpr (mv label)
 
 mv :: String -> MetaVar
-mv label = MetaVar { label, index: 0 }
+mv label = MetaVar { label, index: -1 }
 
 type RenderExprCtx x a w i =
   { renderX :: x -> HTML w i
@@ -166,9 +167,9 @@ renderExpr (Expr a es) = do
       , HH.div [ HP.classes [ HH.ClassName "expr-kids" ] ] r_es
       ]
 
-----------------
+--------------------------------------------------------------------------------
 -- unification
-----------------
+--------------------------------------------------------------------------------
 
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
 
@@ -185,13 +186,13 @@ substAbsExpr sigma e@(MetaExpr x) = case Map.lookup x sigma of
 substAbsExpr sigma (Expr a es) = Expr a (map (substAbsExpr sigma) es)
 
 type UnificationEnv a =
-  { freshCounter :: Int
+  { freshIndex :: Int
   , sigma :: AbsExprSubst a
   }
 
 newUnificationEnv :: forall a. {} -> UnificationEnv a
 newUnificationEnv {} =
-  { freshCounter: 0
+  { freshIndex: 1
   , sigma: Map.empty
   }
 
@@ -230,9 +231,33 @@ unify e1@(Expr a1 es1) e2@(Expr a2 es2) = do
   unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
   Array.zip es1 es2 # traverse_ (uncurry unify)
 
-----------------
+freshIndex :: forall m a. MonadState (UnificationEnv a) m => m Int
+freshIndex = do
+  i <- gets (view (prop (Proxy @"freshIndex")))
+  prop (Proxy @"freshIndex") %= (1 + _)
+  pure i
+
+freshenMetaVar :: forall m a. MonadState (UnificationEnv a) m => MetaVar -> m MetaVar
+freshenMetaVar (MetaVar v) = do
+  i <- freshIndex
+  pure $ MetaVar v { index = i }
+
+freshenAbsExpr :: forall m a. MonadState (UnificationEnv a) m => AbsExpr a -> m (AbsExpr a)
+freshenAbsExpr (MetaExpr x) = MetaExpr <$> freshenMetaVar x
+freshenAbsExpr (Expr a es) = Expr a <$> traverse freshenAbsExpr es
+
+freshenRule :: forall m a. MonadState (UnificationEnv a) m => Rule a -> m (Rule a)
+freshenRule (Rule rule) = do
+  input' <- freshenAbsExpr rule.input
+  output' <- freshenAbsExpr rule.output
+  pure $ Rule rule
+    { input = input'
+    , output = output'
+    }
+
+--------------------------------------------------------------------------------
 -- rewrite systems
-----------------
+--------------------------------------------------------------------------------
 
 newtype Rule a = Rule
   { name :: String
@@ -243,6 +268,7 @@ newtype Rule a = Rule
 newRule :: forall a. String -> AbsExpr a -> AbsExpr a -> Rule a
 newRule name input output = Rule { name, input, output }
 
+-- TODO: freshen metavars in rule
 applyRule :: forall m a. Monad m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
 applyRule (Rule r) e = do
   err_or_env <- unify r.input (bimap absurd identity e)
@@ -347,9 +373,9 @@ simplify e0 = e0 # asExpr # \(a /\ es) -> do
           pure $ Just $ update /\ Expr a es'
   go 0
 
-----------------
+--------------------------------------------------------------------------------
 -- normalization
-----------------
+--------------------------------------------------------------------------------
 
 type NormalizationCtx ctx a =
   { system :: System a
@@ -393,7 +419,7 @@ normalize e = do
     modify_ \state -> state { gas = state.gas - 1 }
   else
     throwError $ HH.text "out of gas"
-  mb_e' /\ _env' <- simplify e
+  mb_e' <- simplify e
     # subReaderT (\ctx -> newSimplificationCtx { system: ctx.system } ctx)
     # subStateT (newSimplificationEnv {}) ignore
   case mb_e' of
