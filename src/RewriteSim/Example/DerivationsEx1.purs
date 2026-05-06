@@ -147,7 +147,6 @@ sequentSystem =
         prettySequent
   }
 
--- TODO: other derivation rules
 makeDerivationSystem :: forall m. MonadThrow Error m => m (DerivationSystem SequentLabel DerivationLabel)
 makeDerivationSystem = do
   let
@@ -174,7 +173,13 @@ makeDerivationSystem = do
       , makeDerivationRule lamD
           [ typing (cons (mv "alpha") (mv "gamma")) (mv "beta") (mv "b") ]
           (typing (mv "gamma") (arr (mv "alpha") (mv "beta")) (lam (mv "b")))
+      , makeDerivationRule appD
+          [ typing (mv "gamma") (arr (mv "alpha") (mv "beta")) (mv "f")
+          , typing (mv "gamma") (mv "alpha") (mv "a")
+          ]
+          (typing (mv "gamma") (mv "beta") (app (mv "f") (mv "a")))
       ]
+
   pure
     { rules: \d ->
         case rules # Array.find (\(d' /\ _) -> d == d') # map snd of
@@ -187,8 +192,8 @@ makeDerivationSystem = do
             Expr d [ x ] | d == sucD -> "s" <> prettyDerivation x
             Expr d [ x ] | d == varD -> "v" <> prettyDerivation x
             Expr d [ b ] | d == lamD -> "λ " <> prettyDerivation b
+            Expr d [ f, a ] | d == appD -> "(" <> prettyDerivation f <> ") " <> prettyDerivation a
             e -> pretty e
         in
           prettyDerivation
     }
-
