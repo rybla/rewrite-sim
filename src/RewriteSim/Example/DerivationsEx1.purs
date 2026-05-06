@@ -1,4 +1,4 @@
-module RewriteSim.Example.DerivationsEx1 where
+module RewriteSim.Example.DerivationsEx1 (sequentSystem, derivationSystem) where
 
 import Prelude
 
@@ -9,48 +9,58 @@ import Data.Array as Array
 import Data.Either (either)
 import Data.Identity (Identity)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (unwrap)
 import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar(..))
 import RewriteSim.Example.Library.Derivations (DerivationRuleContext, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%%))
+import RewriteSim.Utilities (runIdentity)
 
+--------------------------------------------------------------------------------
+-- Labels
+--------------------------------------------------------------------------------
+
+-- sorts
+contextSort = "context" :: String
+typeSort = "type" :: String
+termSort = "term" :: String
+nameSort = "name" :: String
+judgmentSort = "judgment" :: String
+
+-- sequents
+typingS = "typing" :: String
+nilS = "nil" :: String
+consS = "cons" :: String
+unitS = "unit" :: String
+arrS = "arr" :: String
+varS = "var" :: String
+lamS = "lam" :: String
+appS = "app" :: String
+
+-- derivations
+lamD = "Lam" :: String
+
+-- sequent metavariable
 mvS :: forall m. Monad m => String -> m (Sequent String)
 mvS label = pure $ MetaExpr (MetaVar { label, index: 0 })
 
-context = "context"
-typ = "type"
-term = "term"
-name = "name"
-judgment = "judgment"
-
-typing = "typing"
-nil = "nil"
-cons = "cons"
-unit = "unit"
-arr = "arr"
-var = "var"
-lam = "lam"
-app = "app"
-
-lamD = "Lam"
+--------------------------------------------------------------------------------
 
 sequentSystem :: SequentSystem String String
 sequentSystem =
   { rules: case _ of
       -- Judgment
-      s | s == typing -> makeSequentRule [ context, typ, term ] judgment
+      s | s == typingS -> makeSequentRule [ contextSort, typeSort, termSort ] judgmentSort
       -- Context
-      s | s == nil -> makeSequentRule [] context
-      s | s == cons -> makeSequentRule [ typ, context ] context
+      s | s == nilS -> makeSequentRule [] contextSort
+      s | s == consS -> makeSequentRule [ typeSort, contextSort ] contextSort
       -- Type
-      s | s == unit -> makeSequentRule [] typ
-      s | s == arr -> makeSequentRule [ typ, typ ] "Type"
+      s | s == unitS -> makeSequentRule [] typeSort
+      s | s == arrS -> makeSequentRule [ typeSort, typeSort ] typeSort
       -- Term
-      s | s == var -> makeSequentRule [ name ] term
-      s | s == lam -> makeSequentRule [ name, term ] term
-      s | s == app -> makeSequentRule [ term, term ] term
+      s | s == varS -> makeSequentRule [ nameSort ] termSort
+      s | s == lamS -> makeSequentRule [ nameSort, termSort ] termSort
+      s | s == appS -> makeSequentRule [ termSort, termSort ] termSort
       -- Name
       s | Just _ <- String.stripPrefix (String.Pattern "Name:") s -> makeSequentRule [] "Name"
       --   
@@ -59,17 +69,17 @@ sequentSystem =
       let
         showSequent = case _ of
           -- Judgment
-          Expr sq [ g, t, a ] | sq == judgment -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
+          Expr sq [ g, t, a ] | sq == judgmentSort -> showSequent g <> " |- " <> showSequent a <> " : " <> showSequent t
           -- Context
-          Expr sq [] | sq == nil -> "[]"
-          Expr sq [ t, g ] | sq == cons -> showSequent t <> ", " <> showSequent g
+          Expr sq [] | sq == nilS -> "[]"
+          Expr sq [ t, g ] | sq == consS -> showSequent t <> ", " <> showSequent g
           -- Type
-          Expr sq [] | sq == unit -> "unit"
-          Expr sq [ s, t ] | sq == arr -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
+          Expr sq [] | sq == unitS -> "unit"
+          Expr sq [ s, t ] | sq == arrS -> "(" <> showSequent s <> " -> " <> showSequent t <> ")"
           -- Term
-          Expr sq [ x ] | sq == var -> showSequent x
-          Expr sq [ x, b ] | sq == lam -> "lambda " <> showSequent x <> " . " <> showSequent b
-          Expr sq [ f, a ] | sq == app -> "(" <> showSequent f <> ") " <> showSequent a
+          Expr sq [ x ] | sq == varS -> showSequent x
+          Expr sq [ x, b ] | sq == lamS -> "lambda " <> showSequent x <> " . " <> showSequent b
+          Expr sq [ f, a ] | sq == appS -> "(" <> showSequent f <> ") " <> showSequent a
           -- Name
           Expr s [] | Just x <- String.stripPrefix (String.Pattern "name:") s -> x
           --
@@ -78,24 +88,15 @@ sequentSystem =
         showSequent
   }
 
-runDerivationRuleM
-  :: forall a
-   . ReaderT (DerivationRuleContext String String) (ExceptT (DerivationRuleError String) Identity) a
-  -> a
-runDerivationRuleM m = m
-  # flip runReaderT { sequentSystem }
-  # runExceptT
-  # unwrap
-  # either (\error -> unsafeCrashWith $ "[runDerivationRuleM] At derivation label " <> error.derivationLabel <> ": " <> error.message) identity
-
+-- TODO: other derivation rules
 derivationSystem :: DerivationSystem String String
 derivationSystem =
   { rules:
       let
         rules = map runDerivationRuleM
           [ makeDerivationRule lamD
-              [ typing %% [ cons %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
-              (typing %% [ mvS "Gamma", arr %% [ mvS "A", mvS "B" ], lam %% [ mvS "x", mvS "b" ] ])
+              [ typingS %% [ consS %% [ mvS "A", mvS "Gamma" ], mvS "B", mvS "b" ] ]
+              (typingS %% [ mvS "Gamma", arrS %% [ mvS "A", mvS "B" ], lamS %% [ mvS "x", mvS "b" ] ])
           ]
       in
         \d ->
@@ -117,3 +118,13 @@ derivationSystem =
         showDerivation
   }
 
+  where
+  runDerivationRuleM
+    :: forall a
+     . ReaderT (DerivationRuleContext String String) (ExceptT (DerivationRuleError String) Identity) a
+    -> a
+  runDerivationRuleM m = m
+    # flip runReaderT { sequentSystem }
+    # runExceptT
+    # runIdentity
+    # either (\error -> unsafeCrashWith $ "Error in derivation rule for derivation label " <> error.derivationLabel <> ": " <> error.message) identity
