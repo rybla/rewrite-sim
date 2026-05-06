@@ -268,15 +268,16 @@ newtype Rule a = Rule
 newRule :: forall a. String -> AbsExpr a -> AbsExpr a -> Rule a
 newRule name input output = Rule { name, input, output }
 
--- TODO: freshen metavars in rule
-applyRule :: forall m a. Monad m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
+applyRule :: forall m a. MonadState (UnificationEnv a) m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
 applyRule (Rule r) e = do
-  err_or_env <- unify r.input (bimap absurd identity e)
+  input <- freshenAbsExpr r.input
+  output <- freshenAbsExpr r.output
+  err_or_env <- unify input (bimap absurd identity e)
     # flip execStateT (newUnificationEnv {})
     # runExceptT
   case err_or_env of
     Left _err -> pure Nothing
-    Right env -> pure $ Just $ substAbsExprToExpr env.sigma r.output
+    Right env -> pure $ Just $ substAbsExprToExpr env.sigma output
 
 mapRule :: forall a b. (a -> b) -> Rule a -> Rule b
 mapRule f (Rule r) = Rule
@@ -316,13 +317,14 @@ newSimplificationCtx { system } = Record.union
 
 type SimplificationEnv :: Row Type -> Type -> Type
 type SimplificationEnv env a =
-  {
+  { unificationEnv :: UnificationEnv a
   | env
   }
 
 newSimplificationEnv :: forall env a. {} -> Record env -> SimplificationEnv env a
 newSimplificationEnv {} = Record.union
-  {}
+  { unificationEnv: newUnificationEnv {}
+  }
 
 type LocalUpdate a =
   { path :: Path
@@ -348,7 +350,7 @@ simplifyHere e = do
   let
     go i = case Array.index system.rules i of
       Nothing -> pure Nothing
-      Just r -> applyRule r e >>= case _ of
+      Just r -> applyRule r e # subStateT _.unificationEnv (\unificationEnv -> _ { unificationEnv = unificationEnv }) >>= case _ of
         Nothing -> go (i + 1)
         Just e' -> pure $ Just { path: List.reverse revPath, old: e, new: e' }
   go 0
