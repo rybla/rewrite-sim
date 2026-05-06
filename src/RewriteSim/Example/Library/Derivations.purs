@@ -237,6 +237,6 @@ makeDerivation d kidsM = do
               # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.showDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.showSequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.showSequent error.e1 <> " with " <> ctx.sequentSystem.showSequent error.e2 <> " because " <> error.reason })
       )
     # flip execStateT (newUnificationEnv {})
+
   let conclusionSequent = substAbsExpr unificationEnv.sigma conclusion
   pure $ Expr d (kids # map fst) /\ conclusionSequent
-
