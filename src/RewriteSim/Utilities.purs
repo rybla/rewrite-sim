@@ -52,3 +52,5 @@ throw = throwError <<< error
 
 runExceptThrow :: forall m a e. MonadThrow Error m => (e -> String) -> ExceptT e m a -> m a
 runExceptThrow f = runExceptT >>> bindFlipped (either (f >>> throw) pure)
+
+foreign import stringify :: forall a. a -> String
