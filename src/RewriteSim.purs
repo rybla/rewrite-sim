@@ -128,7 +128,11 @@ newRenderExprCtx { renderX, renderA, mb_highlightPath } =
   , mb_highlightPath
   }
 
-renderExpr :: forall m w i x a. MonadReader (RenderExprCtx x a w i) m => GenericExpr x a -> m (HTML w i)
+renderExpr
+  :: forall m w i x a
+   . MonadReader (RenderExprCtx x a w i) m
+  => GenericExpr x a
+  -> m (HTML w i)
 renderExpr (MetaExpr x) = do
   { renderX, mb_highlightPath } <- ask
   let r_x = x # renderX
@@ -276,7 +280,13 @@ newtype Rule a = Rule
 newRule :: forall a. String -> AbsExpr a -> AbsExpr a -> Rule a
 newRule name input output = Rule { name, input, output }
 
-applyRule :: forall m a. MonadState (UnificationEnv a) m => Eq a => Rule a -> Expr a -> m (Maybe (Expr a))
+applyRule
+  :: forall m a
+   . MonadState (UnificationEnv a) m
+  => Eq a
+  => Rule a
+  -> Expr a
+  -> m (Maybe (Expr a))
 applyRule (Rule r) e = do
   input <- freshenAbsExpr r.input
   output <- freshenAbsExpr r.output
