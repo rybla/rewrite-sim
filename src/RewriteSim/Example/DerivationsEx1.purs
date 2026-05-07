@@ -16,6 +16,7 @@ import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (GenericExpr(..), MetaVar(..))
 import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
+import RewriteSim.Logging (class MonadLogger)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (throw)
 
@@ -147,7 +148,11 @@ sequentSystem =
         prettySequent
   }
 
-makeDerivationSystem :: forall m. MonadThrow Error m => m (DerivationSystem SequentLabel DerivationLabel)
+makeDerivationSystem
+  :: forall m
+   . MonadLogger m
+  => MonadThrow Error m
+  => m (DerivationSystem SequentLabel DerivationLabel)
 makeDerivationSystem = do
   let
     runDerivationRuleM

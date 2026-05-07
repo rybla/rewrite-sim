@@ -19,6 +19,7 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
+import RewriteSim.Logging (class MonadLogger)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (subStateT)
 import Type.Proxy (Proxy(..))
@@ -232,6 +233,7 @@ infix 1 makeDerivation as %
 makeDerivation
   :: forall m sort s d
    . Eq s
+  => MonadLogger m
   => MonadReader (DerivingCtx sort s d) m
   => MonadState (DerivingEnv s d) m
   => MonadError DerivingError m

@@ -6,7 +6,7 @@ import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, execStateT, get, gets, modify, modify_)
+import Control.Monad.State (class MonadState, execStateT, get, gets, modify_)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap, rmap)
@@ -36,6 +36,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
+import RewriteSim.Logging (class MonadLogger)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (ignore, subReaderT, subStateT)
 import Type.Proxy (Proxy(..))
@@ -216,7 +217,8 @@ type UnificationError a =
 
 unifyMeta
   :: forall m a
-   . MonadThrow (UnificationError a) m
+   . MonadLogger m
+  => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
   => Eq a
   => MetaVar
@@ -230,18 +232,23 @@ unifyMeta x e = do
 
 unify
   :: forall m a
-   . MonadThrow (UnificationError a) m
+   . MonadLogger m
+  => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
   => Eq a
   => AbsExpr a
   -> AbsExpr a
   -> m Unit
-unify (MetaExpr x) e = unifyMeta x e
-unify e (MetaExpr x) = unifyMeta x e
-unify e1@(Expr a1 es1) e2@(Expr a2 es2) = do
-  unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
-  unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
-  Array.zip es1 es2 # traverse_ (uncurry unify)
+-- unify (MetaExpr x) e = unifyMeta x e
+-- unify e (MetaExpr x) = unifyMeta x e
+-- unify e1@(Expr a1 es1) e2@(Expr a2 es2) = do
+unify e1 e2 = case e1 /\ e2 of
+  MetaExpr x /\ e -> unifyMeta x e
+  e /\ MetaExpr x -> unifyMeta x e
+  Expr a1 es1 /\ Expr a2 es2 -> do
+    unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
+    unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
+    Array.zip es1 es2 # traverse_ (uncurry unify)
 
 freshIndex :: forall m a. MonadState (UnificationEnv a) m => m Int
 freshIndex = do
@@ -282,7 +289,8 @@ newRule name input output = Rule { name, input, output }
 
 applyRule
   :: forall m a
-   . MonadState (UnificationEnv a) m
+   . MonadLogger m
+  => MonadState (UnificationEnv a) m
   => Eq a
   => Rule a
   -> Expr a
@@ -358,7 +366,8 @@ type GlobalUpdate a =
 
 simplifyHere
   :: forall m ctx env a
-   . MonadReader (SimplificationCtx ctx a) m
+   . MonadLogger m
+  => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
   => Eq a
   => Expr a
@@ -375,7 +384,8 @@ simplifyHere e = do
 
 simplify
   :: forall m ctx env a
-   . MonadReader (SimplificationCtx ctx a) m
+   . MonadLogger m
+  => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
   => Eq a
   => Expr a
@@ -426,7 +436,8 @@ type NormalizationTrace a = Array (GlobalUpdate a)
 
 normalize
   :: forall m ctx env a
-   . MonadReader (NormalizationCtx ctx a) m
+   . MonadLogger m
+  => MonadReader (NormalizationCtx ctx a) m
   => MonadState (NormalizationEnv env a) m
   => MonadWriter (NormalizationTrace a) m
   => MonadThrow PlainHTML m
