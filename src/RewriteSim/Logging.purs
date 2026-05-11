@@ -34,7 +34,7 @@ instance MonadEffect m => MonadLogger (LoggerT m) where
     liftEffect $ appendTextFile UTF8 ctx.filepath $ showLogMessage label mbData <> "\n"
 
 showLogMessage :: forall a. String -> Maybe a -> String
-showLogMessage label mbData = "[" <> label <> "]" <> maybe "" stringify mbData
+showLogMessage label mbData = "[" <> label <> "]" <> maybe "" ((" " <> _) <<< stringify) mbData
 
 --------------------------------------------------------------------------------
 

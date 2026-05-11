@@ -3,6 +3,10 @@ module RewriteSim.Pretty where
 import Prelude
 
 import Data.Foldable (intercalate)
+import Data.List (List)
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Tuple (Tuple(..))
 
 class Pretty a where
   pretty :: a -> String
@@ -18,3 +22,6 @@ instance Pretty Boolean where
 
 instance Pretty a => Pretty (Array a) where
   pretty xs = "[" <> (xs # map pretty # intercalate ", ") <> "]"
+
+prettyMap :: forall k v. (k -> String) -> (v -> String) -> Map k v -> String
+prettyMap pk pv m = "{{ " <> ((m # Map.toUnfoldable :: List _) # map (\(Tuple k v) -> pk k <> " -> " <> pv v) # intercalate " ,, ") <> " }}"

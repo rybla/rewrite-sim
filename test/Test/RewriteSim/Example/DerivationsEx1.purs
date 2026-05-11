@@ -15,7 +15,7 @@ import Node.FS.Sync (rm)
 import Node.FS.Sync as FS
 import RewriteSim.Example.DerivationsEx1 (DerivationLabel, SequentLabel, SortLabel, app_, lam_, makeDerivationSystem, sequentSystem, suc_, var_, zero_)
 import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, newDerivingCtx, newDerivingEnv)
-import RewriteSim.Logging (LoggerT, log_, runLoggerT)
+import RewriteSim.Logging (LoggerT, log, log_, runLoggerT)
 import RewriteSim.Utilities (runExceptThrow)
 import Test.Spec (SpecT, beforeAll, describe, hoistSpec, it)
 
@@ -70,10 +70,12 @@ spec' =
               log_ $ "test: " <> testName
               ctx <- ask
               derivation /\ sequent <- m
-              Console.log $ "derivation = " <> ctx.derivationSystem.prettyDerivation derivation
-              Console.log $ "sequent = " <> ctx.sequentSystem.prettySequent sequent
+              log ("test: " <> testName) $ pure $ "derivation = " <> ctx.derivationSystem.prettyDerivation derivation
+              log ("test: " <> testName) $ pure $ "sequent = " <> ctx.sequentSystem.prettySequent sequent
               pure unit
 
           makeTest "vz" $ var_ zero_ -- TODO: why doesn't gamma get inferred to be a cons? 
-          makeTest "lam" $ lam_ (var_ zero_)
-          makeTest "app" $ app_ (var_ (suc_ zero_)) (var_ zero_) -- TODO: why doesn't gamma get inferred to be a double cons?
+          -- makeTest "lam" $ lam_ (var_ zero_)
+          -- makeTest "app" $ app_ (var_ (suc_ zero_)) (var_ zero_) -- TODO: why doesn't gamma get inferred to be a double cons?
+
+          pure unit

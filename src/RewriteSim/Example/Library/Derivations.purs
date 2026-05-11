@@ -19,9 +19,9 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
-import RewriteSim.Logging (class MonadLogger)
-import RewriteSim.Pretty (class Pretty, pretty)
-import RewriteSim.Utilities (subStateT)
+import RewriteSim.Logging (class MonadLogger, log, log_)
+import RewriteSim.Pretty (class Pretty, pretty, prettyMap)
+import RewriteSim.Utilities (stringify, subStateT)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -232,7 +232,8 @@ infix 1 makeDerivation as %
 
 makeDerivation
   :: forall m sort s d
-   . Eq s
+   . Show s
+  => Eq s
   => MonadLogger m
   => MonadReader (DerivingCtx sort s d) m
   => MonadState (DerivingEnv s d) m
@@ -241,6 +242,8 @@ makeDerivation
   -> Array (m (DerivationAndSequent s d))
   -> m (DerivationAndSequent s d)
 makeDerivation d kidsM = do
+  log_ ("makeDerivation: " <> stringify d)
+
   ctx <- ask
 
   let
@@ -262,6 +265,13 @@ makeDerivation d kidsM = do
               # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.prettyDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.prettySequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.prettySequent error.e1 <> " with " <> ctx.sequentSystem.prettySequent error.e2 <> " because " <> error.reason })
       )
     # flip execStateT (newUnificationEnv {})
+
+  log ("makeDerivation: " <> stringify d) $ pure
+    { "unificationEnv.sigma":
+        unificationEnv.sigma #
+          prettyMap pretty ctx.sequentSystem.prettySequent
+    , "conclusion": ctx.sequentSystem.prettySequent conclusion
+    }
 
   let conclusionSequent = substAbsExpr unificationEnv.sigma conclusion
   pure $ Expr d (kids # map fst) /\ conclusionSequent

@@ -138,6 +138,9 @@ sequentSystem =
           -- Type
           Expr s [] | s == unitS -> "unit"
           Expr s [ alpha, beta ] | s == arrS -> "(" <> prettySequent alpha <> " -> " <> prettySequent beta <> ")"
+          -- Var
+          Expr s [] | s == zeroS -> "z"
+          Expr s [ x ] | s == sucS -> "s" <> prettySequent x
           -- Term
           Expr s [ x ] | s == varS -> prettySequent x
           Expr s [ b ] | s == lamS -> "λ " <> prettySequent b
