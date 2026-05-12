@@ -14,7 +14,7 @@ import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (GenericExpr(..), MetaVar(..))
+import RewriteSim (class IsExprLabel, GenericExpr(..), MetaVar(..), prettyExpr)
 import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
 import RewriteSim.Logging (class MonadLogger)
 import RewriteSim.Pretty (class Pretty, pretty)
@@ -45,6 +45,7 @@ newtype SequentLabel = SequentLabel String
 derive newtype instance Show SequentLabel
 derive newtype instance Pretty SequentLabel
 derive newtype instance Eq SequentLabel
+derive newtype instance Ord SequentLabel
 
 typingS = SequentLabel "typing"
 typingVarS = SequentLabel "typingVar"
@@ -70,6 +71,27 @@ var x = varS %% [ x ]
 lam b = lamS %% [ b ]
 app f a = appS %% [ f, a ]
 
+instance IsExprLabel SequentLabel where
+  expectedKids _ = Nothing
+
+  -- Judgment
+  prettyExpr' s [ gamma, alpha, a ] | s == typingS = prettyExpr gamma <> " |- " <> prettyExpr a <> " : " <> prettyExpr alpha
+  prettyExpr' s [ gamma, alpha, x ] | s == typingVarS = prettyExpr gamma <> " |-_var " <> prettyExpr x <> " : " <> prettyExpr alpha
+  -- Ctx
+  prettyExpr' s [] | s == nilS = "[]"
+  prettyExpr' s [ alpha, gamma ] | s == consS = prettyExpr alpha <> ", " <> prettyExpr gamma
+  -- Type
+  prettyExpr' s [] | s == unitS = "unit"
+  prettyExpr' s [ alpha, beta ] | s == arrS = "(" <> prettyExpr alpha <> " = " <> prettyExpr beta <> ")"
+  -- Var
+  prettyExpr' s [] | s == zeroS = "z"
+  prettyExpr' s [ x ] | s == sucS = "s" <> prettyExpr x
+  -- Term
+  prettyExpr' s [ x ] | s == varS = prettyExpr x
+  prettyExpr' s [ b ] | s == lamS = "λ " <> prettyExpr b
+  prettyExpr' s [ f, a ] | s == appS = "(" <> prettyExpr f <> ") " <> prettyExpr a
+  prettyExpr' s _ = unsafeCrashWith $ "Unrecognized sequent label: " <> show s
+
 -- Derivations
 
 newtype DerivationLabel = DerivationLabel String
@@ -77,6 +99,7 @@ newtype DerivationLabel = DerivationLabel String
 derive newtype instance Show DerivationLabel
 derive newtype instance Pretty DerivationLabel
 derive newtype instance Eq DerivationLabel
+derive newtype instance Ord DerivationLabel
 
 nilD = DerivationLabel "nil"
 consD = DerivationLabel "cons"
@@ -97,6 +120,16 @@ suc_ x = sucD % [ x ]
 var_ x = varD % [ x ]
 lam_ b = lamD % [ b ]
 app_ f a = appD % [ f, a ]
+
+instance IsExprLabel DerivationLabel where
+  expectedKids _ = Nothing
+
+  prettyExpr' d [] | d == zeroD = "z"
+  prettyExpr' d [ x ] | d == sucD = "s" <> prettyExpr x
+  prettyExpr' d [ x ] | d == varD = "v" <> prettyExpr x
+  prettyExpr' d [ b ] | d == lamD = "λ " <> prettyExpr b
+  prettyExpr' d [ f, a ] | d == appD = "(" <> prettyExpr f <> ") " <> prettyExpr a
+  prettyExpr' d _ = unsafeCrashWith $ "Unrecognized derivation label: " <> show d
 
 -- | sequent metavariable
 mv :: forall m. Monad m => String -> m (Sequent SequentLabel)
@@ -125,30 +158,6 @@ sequentSystem =
       s | s == appS -> makeSequentRule [ termSort, termSort ] termSort
       --   
       s -> unsafeCrashWith $ "Unrecognized sequent label: " <> pretty s
-  , prettySequent:
-      let
-        prettySequent :: Sequent SequentLabel -> String
-        prettySequent = case _ of
-          -- Judgment
-          Expr s [ gamma, alpha, a ] | s == typingS -> prettySequent gamma <> " |- " <> prettySequent a <> " : " <> prettySequent alpha
-          Expr s [ gamma, alpha, x ] | s == typingVarS -> prettySequent gamma <> " |-_var " <> prettySequent x <> " : " <> prettySequent alpha
-          -- Ctx
-          Expr s [] | s == nilS -> "[]"
-          Expr s [ alpha, gamma ] | s == consS -> prettySequent alpha <> ", " <> prettySequent gamma
-          -- Type
-          Expr s [] | s == unitS -> "unit"
-          Expr s [ alpha, beta ] | s == arrS -> "(" <> prettySequent alpha <> " -> " <> prettySequent beta <> ")"
-          -- Var
-          Expr s [] | s == zeroS -> "z"
-          Expr s [ x ] | s == sucS -> "s" <> prettySequent x
-          -- Term
-          Expr s [ x ] | s == varS -> prettySequent x
-          Expr s [ b ] | s == lamS -> "λ " <> prettySequent b
-          Expr s [ f, a ] | s == appS -> "(" <> prettySequent f <> ") " <> prettySequent a
-          --
-          e -> pretty e
-      in
-        prettySequent
   }
 
 makeDerivationSystem
@@ -193,15 +202,4 @@ makeDerivationSystem = do
         case rules # Array.find (\(d' /\ _) -> d == d') # map snd of
           Just rule -> rule
           Nothing -> unsafeCrashWith $ "Unrecognized derivation label: " <> pretty d
-    , prettyDerivation:
-        let
-          prettyDerivation = case _ of
-            Expr d [] | d == zeroD -> "z"
-            Expr d [ x ] | d == sucD -> "s" <> prettyDerivation x
-            Expr d [ x ] | d == varD -> "v" <> prettyDerivation x
-            Expr d [ b ] | d == lamD -> "λ " <> prettyDerivation b
-            Expr d [ f, a ] | d == appD -> "(" <> prettyDerivation f <> ") " <> prettyDerivation a
-            e -> pretty e
-        in
-          prettyDerivation
     }

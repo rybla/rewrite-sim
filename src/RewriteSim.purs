@@ -4,9 +4,9 @@ import Prelude
 
 import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.Except (runExceptT)
+import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Reader (class MonadReader, ask, local)
-import Control.Monad.State (class MonadState, execStateT, get, gets, modify_)
+import Control.Monad.State (class MonadState, StateT, execStateT, get, gets, modify_, runStateT)
 import Control.Monad.Writer (class MonadWriter, tell)
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor, bimap, rmap)
@@ -38,7 +38,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
 import RewriteSim.Logging (class MonadLogger, log)
 import RewriteSim.Pretty (class Pretty, pretty)
-import RewriteSim.Utilities (ignore, subReaderT, subStateT)
+import RewriteSim.Utilities (ignore, mapThrow, subReaderT, subStateT)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -60,6 +60,11 @@ instance Eq MetaVar where
 
 instance Ord MetaVar where
   compare x = genericCompare x
+
+instance IsMetaVar MetaVar
+
+isRaw :: MetaVar -> Boolean
+isRaw (MetaVar v) = v.index == -1
 
 --------------------------------------------------------------------------------
 -- expressions
@@ -103,6 +108,16 @@ instance (Show x, Show a) => Show (GenericExpr x a) where
 instance (Pretty x, Pretty a) => Pretty (GenericExpr x a) where
   pretty (Expr a es) = "(" <> pretty a <> " % " <> pretty es <> ")"
   pretty (MetaExpr x) = pretty x
+
+class (Show x, Pretty x, Eq x, Ord x) <= IsMetaVar x
+
+class (Show a, Pretty a, Eq a, Ord a) <= IsExprLabel a where
+  expectedKids :: a -> Maybe Int
+  prettyExpr' :: forall x. IsMetaVar x => a -> Array (GenericExpr x a) -> String
+
+prettyExpr :: forall x a. IsMetaVar x => IsExprLabel a => GenericExpr x a -> String
+prettyExpr (MetaExpr x) = pretty x
+prettyExpr (Expr a es) = prettyExpr' a es
 
 me :: forall a. String -> AbsExpr a
 me label = MetaExpr (mv label)
@@ -205,29 +220,30 @@ type UnificationEnv a =
 
 newUnificationEnv :: forall a. {} -> UnificationEnv a
 newUnificationEnv {} =
-  { freshIndex: 1
+  { freshIndex: 0
   , sigma: Map.empty
   }
 
-type UnificationError a =
-  { e1 :: AbsExpr a
-  , e2 :: AbsExpr a
-  , reason :: String
-  }
+data UnificationError a
+  = UnificationError
+      { e1 :: AbsExpr a
+      , e2 :: AbsExpr a
+      , reason :: String
+      }
+  | FresheningUnificationError FresheningError
 
 unifyMeta
   :: forall m a
    . MonadLogger m
   => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => MetaVar
   -> AbsExpr a
   -> m Unit
 unifyMeta x e = do
-  log "unifyMeta" $ pure { x: ?a, e: pretty }
-  when (Set.member x (collectMetas e)) $ throwError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
+  log "unifyMeta" $ pure { x: pretty x, e: prettyExpr e }
+  when (Set.member x (collectMetas e)) $ throwError $ UnificationError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
   gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
     Nothing -> prop (Proxy @"sigma") <<< at x .= Just e
     Just e' -> unify e e'
@@ -237,40 +253,85 @@ unify
    . MonadLogger m
   => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => AbsExpr a
   -> AbsExpr a
   -> m Unit
 unify e1 e2 = do
   log "unify" $ pure
-    { e1: show e1
-    , e2: show e2
+    { e1: prettyExpr e1
+    , e2: prettyExpr e2
     }
   case e1 /\ e2 of
     MetaExpr x /\ e -> unifyMeta x e
     e /\ MetaExpr x -> unifyMeta x e
     Expr a1 es1 /\ Expr a2 es2 -> do
-      unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
-      unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
+      unless (a1 == a2) do throwError $ UnificationError { e1, e2, reason: "different heads" }
+      unless (eq @Int (length es1) (length es2)) do throwError $ UnificationError { e1, e2, reason: "different arities" }
       Array.zip es1 es2 # traverse_ (uncurry unify)
 
-freshIndex :: forall m a. MonadState (UnificationEnv a) m => m Int
-freshIndex = do
+type FresheningEnv a =
+  { freshIndex :: Int
+  , sigma :: AbsExprSubst a
+  }
+
+newFresheningEnv :: forall a. { freshIndex :: Int } -> FresheningEnv a
+newFresheningEnv
+  { freshIndex
+  } =
+  { freshIndex
+  , sigma: Map.empty
+  }
+
+type FresheningError =
+  { message :: String
+  }
+
+nextFreshIndex :: forall m a. MonadState (FresheningEnv a) m => m Int
+nextFreshIndex = do
   i <- gets (view (prop (Proxy @"freshIndex")))
   prop (Proxy @"freshIndex") %= (1 + _)
   pure i
 
-freshenMetaVar :: forall m a. MonadState (UnificationEnv a) m => MetaVar -> m MetaVar
-freshenMetaVar (MetaVar v) = do
-  i <- freshIndex
-  pure $ MetaVar v { index = i }
+freshenMetaVar
+  :: forall m a
+   . MonadLogger m
+  => MonadState (FresheningEnv a) m
+  => MonadThrow FresheningError m
+  => IsExprLabel a
+  => MetaVar
+  -> m (AbsExpr a)
+freshenMetaVar x@(MetaVar v) = do
+  when (not (isRaw x)) $ throwError $ { message: "Attempted to freshen a non-raw meta-variable: " <> show x }
+  gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
+    Nothing -> do
+      i <- nextFreshIndex
+      let e = MetaExpr $ MetaVar v { index = i }
+      prop (Proxy @"sigma") <<< at x .= Just e
+      log "freshenMetaVar" $ pure $ { x: pretty x, i, e: prettyExpr e }
+      pure e
+    Just x' -> do
+      pure x'
 
-freshenAbsExpr :: forall m a. MonadState (UnificationEnv a) m => AbsExpr a -> m (AbsExpr a)
-freshenAbsExpr (MetaExpr x) = MetaExpr <$> freshenMetaVar x
+freshenAbsExpr
+  :: forall m a
+   . MonadLogger m
+  => MonadState (FresheningEnv a) m
+  => MonadThrow FresheningError m
+  => IsExprLabel a
+  => AbsExpr a
+  -> m (AbsExpr a)
+freshenAbsExpr (MetaExpr x) = freshenMetaVar x
 freshenAbsExpr (Expr a es) = Expr a <$> traverse freshenAbsExpr es
 
-freshenRule :: forall m a. MonadState (UnificationEnv a) m => Rule a -> m (Rule a)
+freshenRule
+  :: forall m a
+   . MonadLogger m
+  => MonadState (FresheningEnv a) m
+  => MonadThrow FresheningError m
+  => IsExprLabel a
+  => Rule a
+  -> m (Rule a)
 freshenRule (Rule rule) = do
   input' <- freshenAbsExpr rule.input
   output' <- freshenAbsExpr rule.output
@@ -278,6 +339,20 @@ freshenRule (Rule rule) = do
     { input = input'
     , output = output'
     }
+
+runFresheningM
+  :: forall a m r
+   . MonadState (UnificationEnv a) m
+  => MonadThrow (UnificationError a) m
+  => ExceptT FresheningError (StateT (FresheningEnv a) m) r
+  -> m r
+runFresheningM m = do
+  env0 <- get
+  r /\ fresheningEnv <- m
+    # mapThrow FresheningUnificationError
+    # flip runStateT (newFresheningEnv { freshIndex: env0.freshIndex })
+  modify_ \env -> env { freshIndex = fresheningEnv.freshIndex }
+  pure r
 
 --------------------------------------------------------------------------------
 -- rewrite systems
@@ -296,20 +371,17 @@ applyRule
   :: forall m a
    . MonadLogger m
   => MonadState (UnificationEnv a) m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => Rule a
   -> Expr a
   -> m (Maybe (Expr a))
 applyRule (Rule r) e = do
-  input <- freshenAbsExpr r.input
-  output <- freshenAbsExpr r.output
-  err_or_env <- unify input (bimap absurd identity e)
+  err_or_env <- unify r.input (bimap absurd identity e)
     # flip execStateT (newUnificationEnv {})
     # runExceptT
   case err_or_env of
     Left _err -> pure Nothing
-    Right env -> pure $ Just $ substAbsExprToExpr env.sigma output
+    Right env -> pure $ Just $ substAbsExprToExpr env.sigma r.output
 
 mapRule :: forall a b. (a -> b) -> Rule a -> Rule b
 mapRule f (Rule r) = Rule
@@ -375,8 +447,7 @@ simplifyHere
    . MonadLogger m
   => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => Expr a
   -> m (Maybe (LocalUpdate a))
 simplifyHere e = do
@@ -394,8 +465,7 @@ simplify
    . MonadLogger m
   => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => Expr a
   -> m (Maybe (LocalUpdate a /\ Expr a))
 simplify e0 = e0 # asExpr # \(a /\ es) -> do
@@ -449,8 +519,7 @@ normalize
   => MonadState (NormalizationEnv env a) m
   => MonadWriter (NormalizationTrace a) m
   => MonadThrow PlainHTML m
-  => Show a
-  => Eq a
+  => IsExprLabel a
   => Expr a
   -> m (Expr a)
 normalize e = do

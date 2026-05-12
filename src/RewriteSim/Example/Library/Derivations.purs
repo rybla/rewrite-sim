@@ -3,31 +3,28 @@ module RewriteSim.Example.Library.Derivations where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, throwError)
-import Control.Monad.Except (ExceptT, runExceptT)
+import Control.Monad.Except (ExceptT)
 import Control.Monad.Reader (class MonadReader, ReaderT, ask, runReaderT)
-import Control.Monad.State (class MonadState, StateT, evalStateT, execStateT, gets)
+import Control.Monad.State (class MonadState, StateT, evalStateT, get, gets)
 import Data.Array as Array
-import Data.Either (either)
+import Data.Bifunctor (bimap)
 import Data.Foldable (intercalate, length, traverse_)
 import Data.Lens (view, (.=))
 import Data.Lens.At (at)
 import Data.Lens.Record (prop)
+import Data.List (List)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
-import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
+import Foreign.Object as Object
+import RewriteSim (class IsExprLabel, AbsExpr, FresheningEnv, FresheningError, GenericExpr(..), MetaVar, UnificationEnv, UnificationError(..), freshenAbsExpr, newUnificationEnv, prettyExpr, runFresheningM, substAbsExpr, unify)
 import RewriteSim.Logging (class MonadLogger, log, log_)
-import RewriteSim.Pretty (class Pretty, pretty, prettyFoldable, prettyMap)
-import RewriteSim.Utilities (stringify, subStateT)
+import RewriteSim.Pretty (class Pretty, pretty)
+import RewriteSim.Utilities (mapThrow, stringify, subStateT)
 import Type.Proxy (Proxy(..))
-
---------------------------------------------------------------------------------
-
-mapThrow :: forall e1 e2 m a. MonadThrow e2 m => (e1 -> e2) -> ExceptT e1 m a -> m a
-mapThrow f m = m # runExceptT >>= either (f >>> throwError) pure
 
 --------------------------------------------------------------------------------
 
@@ -46,7 +43,6 @@ makeSequentRule hypotheses conclusion = { hypotheses, conclusion }
 
 type SequentSystem sort s =
   { rules :: s -> SequentRule sort
-  , prettySequent :: Sequent s -> String
   }
 
 type SequentM sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
@@ -99,8 +95,7 @@ makeSequent
    . Show sort
   => Pretty sort
   => Eq sort
-  => Show s
-  => Pretty s
+  => IsExprLabel s
   => MonadReader (SequentCtx sort s) m
   => MonadState (SequentEnv sort s) m
   => MonadError (SequentError s) m
@@ -124,7 +119,7 @@ makeSequent s kidsM = do
     expectedKidSort /\ kid@(Expr kidS _) -> do
       let kidRule = ctx.sequentSystem.rules kidS
       unless (expectedKidSort == kidRule.conclusion) do
-        throwSequentError $ "The sequent " <> ctx.sequentSystem.prettySequent kid <> " is expected to have sort " <> pretty expectedKidSort <> " but it actually has sort " <> pretty kidRule.conclusion <> "."
+        throwSequentError $ "The sequent " <> prettyExpr kid <> " is expected to have sort " <> pretty expectedKidSort <> " but it actually has sort " <> pretty kidRule.conclusion <> "."
   pure $ Expr s kids
 
 --------------------------------------------------------------------------------
@@ -142,7 +137,6 @@ type DerivationRule s =
 
 type DerivationSystem s d =
   { rules :: d -> DerivationRule s
-  , prettyDerivation :: Derivation d -> String
   }
 
 type DerivationRuleCtx sort s =
@@ -232,12 +226,12 @@ infix 1 makeDerivation as %
 
 makeDerivation
   :: forall m sort s d
-   . Show s
-  => Eq s
-  => MonadLogger m
+   . MonadLogger m
   => MonadReader (DerivingCtx sort s d) m
   => MonadState (DerivingEnv s d) m
   => MonadError DerivingError m
+  => IsExprLabel s
+  => IsExprLabel d
   => d
   -> Array (m (DerivationAndSequent s d))
   -> m (DerivationAndSequent s d)
@@ -247,41 +241,66 @@ makeDerivation d kidsM = do
   ctx <- ask
 
   let
-    subUnificationM :: forall a. StateT (UnificationEnv _) m a -> m a
-    subUnificationM = subStateT
-      _.unificationEnv
-      (\unificationEnv -> _ { unificationEnv = unificationEnv })
+    mapThrowUnificationError :: forall a. ExceptT (UnificationError s) m a -> m a
+    mapThrowUnificationError =
+      mapThrow case _ of
+        UnificationError error -> { message: "Failed to unify " <> prettyExpr error.e1 <> " with " <> prettyExpr error.e2 <> " because: " <> error.reason }
+        FresheningUnificationError error -> { message: error.message }
+
+    subUnificationState :: forall m' a. MonadState (DerivingEnv s d) m' => StateT (UnificationEnv s) m' a -> m' a
+    subUnificationState =
+      subStateT
+        _.unificationEnv
+        (\unificationEnv -> _ { unificationEnv = unificationEnv })
+
+    subFresheningM :: forall a. ExceptT FresheningError (StateT (FresheningEnv s) (StateT (UnificationEnv s) (ExceptT (UnificationError s) m))) a -> m a
+    subFresheningM m =
+      m
+        # runFresheningM
+        # subUnificationState
+        # mapThrowUnificationError
 
   let rule = ctx.derivationSystem.rules d
-  hypotheses /\ conclusion <- subUnificationM do
+  hypotheses /\ conclusion <- subFresheningM do
     hypotheses <- traverse freshenAbsExpr rule.hypotheses
     conclusion <- freshenAbsExpr rule.conclusion
     pure $ hypotheses /\ conclusion
+
   log ("makeDerivation: " <> stringify d) $ pure
-    { hypotheses: hypotheses # prettyFoldable ctx.sequentSystem.prettySequent
-    , conclusion: conclusion # ctx.sequentSystem.prettySequent
+    { hypotheses: hypotheses # map prettyExpr
+    , conclusion: conclusion # prettyExpr
     }
+
   kids <- sequence kidsM
-  unificationEnv <- Array.zip hypotheses kids
+  Array.zip hypotheses kids
     #
       ( traverse_ case _ of
           _ /\ (MetaExpr x /\ _) -> throwError { message: "A metavariable, " <> pretty x <> ", appeared as a hypothesis of a derivation rule. You _cannot_ use metavariables in place of derivations." }
           expectedKidSequent /\ (kid /\ actualKidSequent) -> do
             unify expectedKidSequent actualKidSequent
-              # mapThrow (\error -> { message: "Expected the derivation " <> ctx.derivationSystem.prettyDerivation kid <> " to have a sequent that unified with " <> ctx.sequentSystem.prettySequent expectedKidSequent <> ", but failed to unify " <> ctx.sequentSystem.prettySequent error.e1 <> " with " <> ctx.sequentSystem.prettySequent error.e2 <> " because " <> error.reason })
+              # mapThrow
+                  ( case _ of
+                      UnificationError error -> { message: "Expected the derivation " <> prettyExpr kid <> " to have a sequent that unified with " <> prettyExpr expectedKidSequent <> ", but failed to unify " <> prettyExpr error.e1 <> " with " <> prettyExpr error.e2 <> " because: " <> error.reason }
+                      FresheningUnificationError error -> { message: error.message }
+                  )
       )
-    # flip execStateT (newUnificationEnv {})
+    -- # flip execStateT (newUnificationEnv {})
+    # subUnificationState
+
+  env <- get
 
   log ("makeDerivation: " <> stringify d) $ pure
     { "unificationEnv.sigma":
-        unificationEnv.sigma #
-          prettyMap pretty ctx.sequentSystem.prettySequent
+        env.unificationEnv.sigma
+          # (Map.toUnfoldable :: _ -> List _)
+          # map (bimap pretty prettyExpr)
+          # Object.fromFoldable
     }
 
-  let conclusionSequent = substAbsExpr unificationEnv.sigma conclusion
+  let conclusionSequent = substAbsExpr env.unificationEnv.sigma conclusion
 
   log ("makeDerivation: " <> stringify d) $ pure
-    { conclusionSequent: conclusionSequent # ctx.sequentSystem.prettySequent
+    { conclusionSequent: conclusionSequent # prettyExpr
     }
 
   pure $ Expr d (kids # map fst) /\ conclusionSequent

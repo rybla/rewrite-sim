@@ -13,6 +13,7 @@ import Effect.Class.Console as Console
 import Effect.Exception (Error)
 import Node.FS.Sync (rm)
 import Node.FS.Sync as FS
+import RewriteSim (prettyExpr)
 import RewriteSim.Example.DerivationsEx1 (DerivationLabel, SequentLabel, SortLabel, app_, lam_, makeDerivationSystem, sequentSystem, suc_, var_, zero_)
 import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, newDerivingCtx, newDerivingEnv)
 import RewriteSim.Logging (LoggerT, log, log_, runLoggerT)
@@ -36,6 +37,8 @@ spec = hoistSpec runLoggerT' (\_ -> runLoggerT') spec'
 type DerivationTestInput =
   { derivationSystem :: DerivationSystem SequentLabel DerivationLabel
   }
+
+-- TODO: Implement the ability to assert that two expressions are equivalent up to renaming metavariables, which is derived from doing a unification and checking that each of the unification substitutions is merely a substitution of one metavariable for another. 
 
 spec' :: SpecT (LoggerT Aff) Unit (LoggerT Aff) Unit
 spec' =
@@ -68,10 +71,9 @@ spec' =
           let
             makeTest testName m = it testName $ runDerivingTest do
               log_ $ "test: " <> testName
-              ctx <- ask
               derivation /\ sequent <- m
-              log ("test: " <> testName) $ pure $ "derivation = " <> ctx.derivationSystem.prettyDerivation derivation
-              log ("test: " <> testName) $ pure $ "sequent = " <> ctx.sequentSystem.prettySequent sequent
+              log ("test: " <> testName) $ pure $ "derivation = " <> prettyExpr derivation
+              log ("test: " <> testName) $ pure $ "sequent = " <> prettyExpr sequent
               pure unit
 
           makeTest "vz" $ var_ zero_ -- TODO: why doesn't gamma get inferred to be a cons? 

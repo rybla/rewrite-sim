@@ -2,7 +2,7 @@ module RewriteSim.Pretty where
 
 import Prelude
 
-import Data.Foldable (class Foldable, foldl, foldr, intercalate)
+import Data.Foldable (class Foldable, intercalate)
 import Data.List (List)
 import Data.Map (Map)
 import Data.Map as Map
@@ -28,3 +28,6 @@ prettyMap pk pv m = "{{ " <> ((m # Map.toUnfoldable :: List _) # map (\(Tuple k 
 
 prettyFoldable :: forall f x. Functor f => Foldable f => (x -> String) -> f x -> String
 prettyFoldable fx xs = "[[ " <> intercalate " ,, " (map fx xs) <> " ]]"
+
+metaquotes :: String -> String
+metaquotes s = "{{ " <> s <> " }}"
