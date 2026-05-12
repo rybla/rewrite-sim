@@ -20,7 +20,7 @@ import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import RewriteSim (AbsExpr, GenericExpr(..), MetaVar, UnificationEnv, freshenAbsExpr, newUnificationEnv, substAbsExpr, unify)
 import RewriteSim.Logging (class MonadLogger, log, log_)
-import RewriteSim.Pretty (class Pretty, pretty, prettyMap)
+import RewriteSim.Pretty (class Pretty, pretty, prettyFoldable, prettyMap)
 import RewriteSim.Utilities (stringify, subStateT)
 import Type.Proxy (Proxy(..))
 
@@ -253,8 +253,14 @@ makeDerivation d kidsM = do
       (\unificationEnv -> _ { unificationEnv = unificationEnv })
 
   let rule = ctx.derivationSystem.rules d
-  hypotheses <- traverse freshenAbsExpr rule.hypotheses # subUnificationM
-  conclusion <- freshenAbsExpr rule.conclusion # subUnificationM
+  hypotheses /\ conclusion <- subUnificationM do
+    hypotheses <- traverse freshenAbsExpr rule.hypotheses
+    conclusion <- freshenAbsExpr rule.conclusion
+    pure $ hypotheses /\ conclusion
+  log ("makeDerivation: " <> stringify d) $ pure
+    { hypotheses: hypotheses # prettyFoldable ctx.sequentSystem.prettySequent
+    , conclusion: conclusion # ctx.sequentSystem.prettySequent
+    }
   kids <- sequence kidsM
   unificationEnv <- Array.zip hypotheses kids
     #
@@ -270,8 +276,12 @@ makeDerivation d kidsM = do
     { "unificationEnv.sigma":
         unificationEnv.sigma #
           prettyMap pretty ctx.sequentSystem.prettySequent
-    , "conclusion": ctx.sequentSystem.prettySequent conclusion
     }
 
   let conclusionSequent = substAbsExpr unificationEnv.sigma conclusion
+
+  log ("makeDerivation: " <> stringify d) $ pure
+    { conclusionSequent: conclusionSequent # ctx.sequentSystem.prettySequent
+    }
+
   pure $ Expr d (kids # map fst) /\ conclusionSequent

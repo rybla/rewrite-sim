@@ -36,7 +36,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Partial.Unsafe (unsafeCrashWith)
 import Record as Record
-import RewriteSim.Logging (class MonadLogger)
+import RewriteSim.Logging (class MonadLogger, log)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (ignore, subReaderT, subStateT)
 import Type.Proxy (Proxy(..))
@@ -220,11 +220,13 @@ unifyMeta
    . MonadLogger m
   => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
+  => Show a
   => Eq a
   => MetaVar
   -> AbsExpr a
   -> m Unit
 unifyMeta x e = do
+  log "unifyMeta" $ pure { x: ?a, e: pretty }
   when (Set.member x (collectMetas e)) $ throwError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
   gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
     Nothing -> prop (Proxy @"sigma") <<< at x .= Just e
@@ -235,20 +237,23 @@ unify
    . MonadLogger m
   => MonadThrow (UnificationError a) m
   => MonadState (UnificationEnv a) m
+  => Show a
   => Eq a
   => AbsExpr a
   -> AbsExpr a
   -> m Unit
--- unify (MetaExpr x) e = unifyMeta x e
--- unify e (MetaExpr x) = unifyMeta x e
--- unify e1@(Expr a1 es1) e2@(Expr a2 es2) = do
-unify e1 e2 = case e1 /\ e2 of
-  MetaExpr x /\ e -> unifyMeta x e
-  e /\ MetaExpr x -> unifyMeta x e
-  Expr a1 es1 /\ Expr a2 es2 -> do
-    unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
-    unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
-    Array.zip es1 es2 # traverse_ (uncurry unify)
+unify e1 e2 = do
+  log "unify" $ pure
+    { e1: show e1
+    , e2: show e2
+    }
+  case e1 /\ e2 of
+    MetaExpr x /\ e -> unifyMeta x e
+    e /\ MetaExpr x -> unifyMeta x e
+    Expr a1 es1 /\ Expr a2 es2 -> do
+      unless (a1 == a2) do throwError { e1, e2, reason: "different heads" }
+      unless (eq @Int (length es1) (length es2)) do throwError { e1, e2, reason: "different arities" }
+      Array.zip es1 es2 # traverse_ (uncurry unify)
 
 freshIndex :: forall m a. MonadState (UnificationEnv a) m => m Int
 freshIndex = do
@@ -291,6 +296,7 @@ applyRule
   :: forall m a
    . MonadLogger m
   => MonadState (UnificationEnv a) m
+  => Show a
   => Eq a
   => Rule a
   -> Expr a
@@ -369,6 +375,7 @@ simplifyHere
    . MonadLogger m
   => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
+  => Show a
   => Eq a
   => Expr a
   -> m (Maybe (LocalUpdate a))
@@ -387,6 +394,7 @@ simplify
    . MonadLogger m
   => MonadReader (SimplificationCtx ctx a) m
   => MonadState (SimplificationEnv env a) m
+  => Show a
   => Eq a
   => Expr a
   -> m (Maybe (LocalUpdate a /\ Expr a))
@@ -441,6 +449,7 @@ normalize
   => MonadState (NormalizationEnv env a) m
   => MonadWriter (NormalizationTrace a) m
   => MonadThrow PlainHTML m
+  => Show a
   => Eq a
   => Expr a
   -> m (Expr a)
