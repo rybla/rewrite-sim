@@ -150,13 +150,15 @@ type DerivationRuleError d =
 
 makeDerivationRule
   :: forall sort s d m
-   . MonadReader (DerivationRuleCtx sort s) m
+   . MonadLogger m
+  => MonadReader (DerivationRuleCtx sort s) m
   => MonadThrow (DerivationRuleError d) m
+  => IsExprLabel d
   => d
   -> Array (SequentM sort s m (Sequent s))
   -> SequentM sort s m (Sequent s)
   -> m (d /\ DerivationRule s)
-makeDerivationRule d hypothesesM conclusionM = do
+makeDerivationRule d hypothesesM conclusionM = log "makeDerivationRule" (pure { d: pretty d }) *> do
   ctx <- ask
   let
     runSequentM :: forall a. SequentM sort s m a -> m a

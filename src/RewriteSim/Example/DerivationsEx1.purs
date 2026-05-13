@@ -14,9 +14,10 @@ import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (class IsExprLabel, GenericExpr(..), MetaVar(..), prettyExpr)
+import RewriteSim (class IsExprLabel, prettyExpr)
+import RewriteSim as RS
 import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
-import RewriteSim.Logging (class MonadLogger)
+import RewriteSim.Logging (class MonadLogger, log)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (throw)
 
@@ -82,12 +83,12 @@ instance IsExprLabel SequentLabel where
   prettyExpr' s [ alpha, gamma ] | s == consS = prettyExpr alpha <> ", " <> prettyExpr gamma
   -- Type
   prettyExpr' s [] | s == unitS = "unit"
-  prettyExpr' s [ alpha, beta ] | s == arrS = "(" <> prettyExpr alpha <> " = " <> prettyExpr beta <> ")"
+  prettyExpr' s [ alpha, beta ] | s == arrS = "(" <> prettyExpr alpha <> " -> " <> prettyExpr beta <> ")"
   -- Var
   prettyExpr' s [] | s == zeroS = "z"
   prettyExpr' s [ x ] | s == sucS = "s" <> prettyExpr x
   -- Term
-  prettyExpr' s [ x ] | s == varS = prettyExpr x
+  prettyExpr' s [ x ] | s == varS = "v" <> prettyExpr x
   prettyExpr' s [ b ] | s == lamS = "λ " <> prettyExpr b
   prettyExpr' s [ f, a ] | s == appS = "(" <> prettyExpr f <> ") " <> prettyExpr a
   prettyExpr' s _ = unsafeCrashWith $ "Unrecognized sequent label: " <> show s
@@ -132,8 +133,8 @@ instance IsExprLabel DerivationLabel where
   prettyExpr' d _ = unsafeCrashWith $ "Unrecognized derivation label: " <> show d
 
 -- | sequent metavariable
-mv :: forall m. Monad m => String -> m (Sequent SequentLabel)
-mv label = pure $ MetaExpr (MetaVar { label, index: -1 })
+me :: forall m. Monad m => String -> m (Sequent SequentLabel)
+me label = pure $ RS.me label
 
 --------------------------------------------------------------------------------
 
@@ -166,6 +167,7 @@ makeDerivationSystem
   => MonadThrow Error m
   => m (DerivationSystem SequentLabel DerivationLabel)
 makeDerivationSystem = do
+  log "makeDerivationSystem" Nothing
   let
     runDerivationRuleM
       :: forall a
@@ -180,21 +182,25 @@ makeDerivationSystem = do
     traverse runDerivationRuleM
       [ makeDerivationRule zeroD
           []
-          (typingVar (cons (mv "alpha") (mv "gamma")) (mv "alpha") zero)
+          (typingVar (cons (me "alpha") (me "gamma")) (me "alpha") zero)
+
       , makeDerivationRule sucD
-          [ typingVar (mv "gamma") (mv "alpha") (mv "x") ]
-          (typingVar (cons (mv "beta") (mv "gamma")) (mv "alpha") (suc (mv "x")))
+          [ typingVar (me "gamma") (me "alpha") (me "x") ]
+          (typingVar (cons (me "beta") (me "gamma")) (me "alpha") (suc (me "x")))
+
       , makeDerivationRule varD
-          [ typingVar (mv "gamma") (mv "alpha") (mv "x") ]
-          (typing (mv "gamma") (mv "alpha") (var (mv "x")))
+          [ typingVar (me "gamma") (me "alpha") (me "x") ]
+          (typing (me "gamma") (me "alpha") (var (me "x")))
+
       , makeDerivationRule lamD
-          [ typing (cons (mv "alpha") (mv "gamma")) (mv "beta") (mv "b") ]
-          (typing (mv "gamma") (arr (mv "alpha") (mv "beta")) (lam (mv "b")))
+          [ typing (cons (me "alpha") (me "gamma")) (me "beta") (me "b") ]
+          (typing (me "gamma") (arr (me "alpha") (me "beta")) (lam (me "b")))
+
       , makeDerivationRule appD
-          [ typing (mv "gamma") (arr (mv "alpha") (mv "beta")) (mv "f")
-          , typing (mv "gamma") (mv "alpha") (mv "a")
+          [ typing (me "gamma") (arr (me "alpha") (me "beta")) (me "f")
+          , typing (me "gamma") (me "alpha") (me "a")
           ]
-          (typing (mv "gamma") (mv "beta") (app (mv "f") (mv "a")))
+          (typing (me "gamma") (me "beta") (app (me "f") (me "a")))
       ]
 
   pure
