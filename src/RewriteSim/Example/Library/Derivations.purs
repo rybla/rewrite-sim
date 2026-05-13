@@ -20,7 +20,7 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Foreign.Object as Object
-import RewriteSim (class IsExprLabel, AbsExpr, FresheningEnv, FresheningError, GenericExpr(..), MetaVar, UnificationEnv, UnificationError(..), freshenAbsExpr, newUnificationEnv, prettyExpr, runFresheningM, substAbsExpr, unify)
+import RewriteSim (class IsExprLabel, AbsExpr, FresheningEnv, FresheningError, GenericExpr(..), MetaVar, UnificationEnv, UnificationError(..), FresheningT, freshenAbsExpr, newUnificationEnv, prettyExpr, runFresheningT, substAbsExpr, unify)
 import RewriteSim.Logging (class MonadLogger, log, log_)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (mapThrow, stringify, subStateT)
@@ -139,6 +139,8 @@ type DerivationSystem s d =
   { rules :: d -> DerivationRule s
   }
 
+type DerivationRuleT sort s d m = ReaderT (DerivationRuleCtx sort s) (ExceptT (DerivationRuleError d) m)
+
 type DerivationRuleCtx sort s =
   { sequentSystem :: SequentSystem sort s
   }
@@ -177,6 +179,8 @@ makeDerivationRule d hypothesesM conclusionM = log "makeDerivationRule" (pure { 
           )
   hypotheses /\ conclusion <- runSequentM $ Tuple <$> sequence hypothesesM <*> conclusionM
   pure $ d /\ { hypotheses, conclusion }
+
+type DerivingT sort s d m = ReaderT (DerivingCtx sort s d) (StateT (DerivingEnv s d) (ExceptT DerivingError m))
 
 type DerivingEnv :: Type -> Type -> Type
 type DerivingEnv s d =
@@ -255,15 +259,15 @@ makeDerivation d kidsM = do
         _.unificationEnv
         (\unificationEnv -> _ { unificationEnv = unificationEnv })
 
-    subFresheningM :: forall a. ExceptT FresheningError (StateT (FresheningEnv s) (StateT (UnificationEnv s) (ExceptT (UnificationError s) m))) a -> m a
-    subFresheningM m =
+    subFresheningT :: forall a. FresheningT s (StateT (UnificationEnv s) (ExceptT (UnificationError s) m)) a -> m a
+    subFresheningT m =
       m
-        # runFresheningM
+        # runFresheningT
         # subUnificationState
         # mapThrowUnificationError
 
   let rule = ctx.derivationSystem.rules d
-  hypotheses /\ conclusion <- subFresheningM do
+  hypotheses /\ conclusion <- subFresheningT do
     hypotheses <- traverse freshenAbsExpr rule.hypotheses
     conclusion <- freshenAbsExpr rule.conclusion
     pure $ hypotheses /\ conclusion

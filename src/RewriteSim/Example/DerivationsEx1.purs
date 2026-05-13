@@ -16,7 +16,7 @@ import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
 import RewriteSim (class IsExprLabel, prettyExpr)
 import RewriteSim as RS
-import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
+import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, DerivationRuleT, makeDerivationRule, makeSequentRule, (%), (%%))
 import RewriteSim.Logging (class MonadLogger, log)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (throw)
@@ -168,10 +168,11 @@ makeDerivationSystem
   => m (DerivationSystem SequentLabel DerivationLabel)
 makeDerivationSystem = do
   log "makeDerivationSystem" Nothing
+
   let
     runDerivationRuleM
       :: forall a
-       . ReaderT (DerivationRuleCtx SortLabel SequentLabel) (ExceptT (DerivationRuleError DerivationLabel) m) a
+       . DerivationRuleT SortLabel SequentLabel DerivationLabel m a
       -> m a
     runDerivationRuleM m = m
       # flip runReaderT { sequentSystem }

@@ -215,6 +215,8 @@ substAbsExpr sigma e@(MetaExpr x) = case Map.lookup x sigma of
   Just e' -> substAbsExpr sigma e'
 substAbsExpr sigma (Expr a es) = Expr a (map (substAbsExpr sigma) es)
 
+type UnificationM a m = StateT (UnificationEnv a) (ExceptT (UnificationError a) m)
+
 type UnificationEnv a =
   { freshIndex :: Int
   , sigma :: AbsExprSubst a
@@ -271,6 +273,8 @@ unify e1 e2 = do
       unless (a1 == a2) do throwError $ UnificationError { e1, e2, reason: "different heads" }
       unless (eq @Int (length es1) (length es2)) do throwError $ UnificationError { e1, e2, reason: "different arities" }
       Array.zip es1 es2 # traverse_ (uncurry unify)
+
+type FresheningT a m = ExceptT FresheningError (StateT (FresheningEnv a) m)
 
 type FresheningEnv a =
   { freshIndex :: Int
@@ -342,13 +346,13 @@ freshenRule (Rule rule) = do
     , output = output'
     }
 
-runFresheningM
+runFresheningT
   :: forall a m r
    . MonadState (UnificationEnv a) m
   => MonadThrow (UnificationError a) m
-  => ExceptT FresheningError (StateT (FresheningEnv a) m) r
+  => FresheningT a m r
   -> m r
-runFresheningM m = do
+runFresheningT m = do
   env0 <- get
   r /\ fresheningEnv <- m
     # mapThrow FresheningUnificationError
