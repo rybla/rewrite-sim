@@ -4,8 +4,8 @@ import Prelude hiding (zero)
 
 import Control.Bind (bindFlipped)
 import Control.Monad.Error.Class (class MonadThrow)
-import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.Reader (ReaderT, runReaderT)
+import Control.Monad.Except (runExceptT)
+import Control.Monad.Reader (runReaderT)
 import Data.Array as Array
 import Data.Either (either)
 import Data.Maybe (Maybe(..))
@@ -14,9 +14,8 @@ import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import Effect.Exception (Error)
 import Partial.Unsafe (unsafeCrashWith)
-import RewriteSim (class IsExprLabel, prettyExpr)
-import RewriteSim as RS
-import RewriteSim.Example.Library.Derivations (DerivationRuleCtx, DerivationRuleError, DerivationSystem, Sequent, SequentSystem, DerivationRuleT, makeDerivationRule, makeSequentRule, (%), (%%))
+import RewriteSim (class IsExprLabel, me, prettyExpr)
+import RewriteSim.Example.Library.Derivations (DerivationRuleT, DerivationSystem, Sequent, SequentSystem, makeDerivationRule, makeSequentRule, (%), (%%))
 import RewriteSim.Logging (class MonadLogger, log)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (throw)
@@ -133,8 +132,8 @@ instance IsExprLabel DerivationLabel where
   prettyExpr' d _ = unsafeCrashWith $ "Unrecognized derivation label: " <> show d
 
 -- | sequent metavariable
-me :: forall m. Monad m => String -> m (Sequent SequentLabel)
-me label = pure $ RS.me label
+mS :: forall m. Monad m => String -> m (Sequent SequentLabel)
+mS label = pure $ me label
 
 --------------------------------------------------------------------------------
 
@@ -183,25 +182,25 @@ makeDerivationSystem = do
     traverse runDerivationRuleM
       [ makeDerivationRule zeroD
           []
-          (typingVar (cons (me "alpha") (me "gamma")) (me "alpha") zero)
+          (typingVar (cons (mS "alpha") (mS "gamma")) (mS "alpha") zero)
 
       , makeDerivationRule sucD
-          [ typingVar (me "gamma") (me "alpha") (me "x") ]
-          (typingVar (cons (me "beta") (me "gamma")) (me "alpha") (suc (me "x")))
+          [ typingVar (mS "gamma") (mS "alpha") (mS "x") ]
+          (typingVar (cons (mS "beta") (mS "gamma")) (mS "alpha") (suc (mS "x")))
 
       , makeDerivationRule varD
-          [ typingVar (me "gamma") (me "alpha") (me "x") ]
-          (typing (me "gamma") (me "alpha") (var (me "x")))
+          [ typingVar (mS "gamma") (mS "alpha") (mS "x") ]
+          (typing (mS "gamma") (mS "alpha") (var (mS "x")))
 
       , makeDerivationRule lamD
-          [ typing (cons (me "alpha") (me "gamma")) (me "beta") (me "b") ]
-          (typing (me "gamma") (arr (me "alpha") (me "beta")) (lam (me "b")))
+          [ typing (cons (mS "alpha") (mS "gamma")) (mS "beta") (mS "b") ]
+          (typing (mS "gamma") (arr (mS "alpha") (mS "beta")) (lam (mS "b")))
 
       , makeDerivationRule appD
-          [ typing (me "gamma") (arr (me "alpha") (me "beta")) (me "f")
-          , typing (me "gamma") (me "alpha") (me "a")
+          [ typing (mS "gamma") (arr (mS "alpha") (mS "beta")) (mS "f")
+          , typing (mS "gamma") (mS "alpha") (mS "a")
           ]
-          (typing (me "gamma") (me "beta") (app (me "f") (me "a")))
+          (typing (mS "gamma") (mS "beta") (app (mS "f") (mS "a")))
       ]
 
   pure
