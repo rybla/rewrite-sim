@@ -30,4 +30,4 @@ prettyFoldable :: forall f x. Functor f => Foldable f => (x -> String) -> f x ->
 prettyFoldable fx xs = "[[ " <> intercalate " ,, " (map fx xs) <> " ]]"
 
 metaquotes :: String -> String
-metaquotes s = "{{ " <> s <> " }}"
+metaquotes s = "<< " <> s <> " >>"

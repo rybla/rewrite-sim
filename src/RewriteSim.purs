@@ -13,6 +13,7 @@ import Data.Bifunctor (class Bifunctor, bimap, rmap)
 import Data.Either (Either(..))
 import Data.Eq.Generic (genericEq)
 import Data.Foldable (fold, foldl, length, null, traverse_)
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Lens (view, (%=), (.=))
 import Data.Lens.At (at)
@@ -80,13 +81,6 @@ asExpr (Expr a es) = a /\ es
 -- | An abstract expression, which *can* contain metavariables.
 type AbsExpr = GenericExpr MetaVar
 
-collectMetas :: forall x a. Ord x => GenericExpr x a -> Set x
-collectMetas = collectMetas' Set.empty
-
-collectMetas' :: forall x a. Ord x => Set x -> GenericExpr x a -> Set x
-collectMetas' vs (MetaExpr v) = Set.insert v vs
-collectMetas' vs (Expr _ es) = foldl collectMetas' vs es
-
 data GenericExpr x a
   = MetaExpr x
   | Expr a (Array (GenericExpr x a))
@@ -118,6 +112,17 @@ class (Show a, Pretty a, Eq a, Ord a) <= IsExprLabel a where
 prettyExpr :: forall x a. IsMetaVar x => IsExprLabel a => GenericExpr x a -> String
 prettyExpr (MetaExpr x) = pretty x
 prettyExpr (Expr a es) = prettyExpr' a es
+
+collectMetas :: forall x a. Ord x => GenericExpr x a -> Set x
+collectMetas = collectMetas' Set.empty
+
+collectMetas' :: forall x a. Ord x => Set x -> GenericExpr x a -> Set x
+collectMetas' vs (MetaExpr v) = Set.insert v vs
+collectMetas' vs (Expr _ es) = foldl collectMetas' vs es
+
+isMetaExpr :: forall x a. GenericExpr x a -> Boolean
+isMetaExpr (MetaExpr _) = true
+isMetaExpr _ = false
 
 me :: forall a. String -> AbsExpr a
 me label = MetaExpr (mv label)
@@ -203,6 +208,11 @@ renderExpr (Expr a es) = do
 
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
 
+-- | Checks if a substitution is merely a renaming of metavariables. This true
+-- | when each metavariable is substituted for another metavariable.
+isRenaming :: forall a. AbsExprSubst a -> Boolean
+isRenaming = foldlWithIndex (\_ acc e -> acc && isMetaExpr e) true
+
 substAbsExprToExpr :: forall a. AbsExprSubst a -> AbsExpr a -> Expr a
 substAbsExprToExpr sigma (MetaExpr x) = case Map.lookup x sigma of
   Nothing -> unsafeCrashWith $ "Unknown metavariable: " <> show x
@@ -247,7 +257,7 @@ unifyMeta
   -> m Unit
 unifyMeta x e = do
   log "unifyMeta" $ pure { x: pretty x, e: prettyExpr e }
-  when (Set.member x (collectMetas e)) $ throwError $ UnificationError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
+  when (not (isMetaExpr e) && Set.member x (collectMetas e)) $ throwError $ UnificationError { e1: MetaExpr x, e2: e, reason: "infinite assignment" }
   gets (view (prop (Proxy @"sigma") <<< at x)) >>= case _ of
     Nothing -> prop (Proxy @"sigma") <<< at x .= Just e
     Just e' -> unify e e'

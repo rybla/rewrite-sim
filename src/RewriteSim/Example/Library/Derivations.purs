@@ -47,14 +47,29 @@ type SequentSystem sort s =
 
 type SequentT sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
 
+runSequentT
+  :: forall sort s m a
+   . Monad m
+  => SequentPreCtx sort s
+  -> SequentT sort s m a
+  -> ExceptT (SequentError s) m a
+runSequentT ctx m = m
+  # flip runReaderT
+      ( newSequentCtx
+          ctx
+      )
+  # flip evalStateT (newSequentEnv {})
+
 type SequentEnv :: Type -> Type -> Type
 type SequentEnv sort s =
   { metaSorts :: Map MetaVar sort
   }
 
+type SequentPreEnv = {}
+
 newSequentEnv
   :: forall sort s
-   . {}
+   . SequentPreEnv
   -> SequentEnv sort s
 newSequentEnv {} =
   { metaSorts: Map.empty
@@ -64,9 +79,13 @@ type SequentCtx sort s =
   { sequentSystem :: SequentSystem sort s
   }
 
+type SequentPreCtx sort s =
+  { sequentSystem :: SequentSystem sort s
+  }
+
 newSequentCtx
   :: forall sort s
-   . { sequentSystem :: SequentSystem sort s }
+   . SequentPreCtx sort s
   -> SequentCtx sort s
 newSequentCtx { sequentSystem } =
   { sequentSystem
@@ -162,35 +181,28 @@ makeDerivationRule
   -> m (d /\ DerivationRule s)
 makeDerivationRule d hypothesesM conclusionM = log "makeDerivationRule" (pure { d: pretty d }) *> do
   ctx <- ask
-  let
-    runSequentT :: forall a. SequentT sort s m a -> m a
-    runSequentT m = m
-      # flip runReaderT
-          ( newSequentCtx
-              { sequentSystem: ctx.sequentSystem
-              }
-          )
-      # flip evalStateT (newSequentEnv {})
+  hypotheses /\ conclusion <-
+    (Tuple <$> sequence hypothesesM <*> conclusionM)
+      # runSequentT ctx
       # mapThrow
           ( \error ->
               { derivationLabel: d
               , message: error.message
               }
           )
-  hypotheses /\ conclusion <- runSequentT $ Tuple <$> sequence hypothesesM <*> conclusionM
   pure $ d /\ { hypotheses, conclusion }
 
-type DerivingT sort s d m = ReaderT (DerivingCtx sort s d) (StateT (DerivingEnv s d) (ExceptT DerivingError m))
+type DerivingT sort s d m = ReaderT (DerivingCtx sort s d) (StateT (DerivingEnv s) (ExceptT DerivingError m))
 
-type DerivingEnv :: Type -> Type -> Type
-type DerivingEnv s d =
+type DerivingEnv :: Type -> Type
+type DerivingEnv s =
   { unificationEnv :: UnificationEnv s
   }
 
 newDerivingEnv
   :: forall s d
    . {}
-  -> DerivingEnv s d
+  -> DerivingEnv s
 newDerivingEnv {} =
   { unificationEnv: newUnificationEnv {}
   }
@@ -226,13 +238,47 @@ throwDerivingError message = do
     { message
     }
 
+subUnificationState
+  :: forall s m a
+   . MonadState (DerivingEnv s) m
+  => StateT (UnificationEnv s) m a
+  -> m a
+subUnificationState =
+  subStateT
+    _.unificationEnv
+    (\unificationEnv -> _ { unificationEnv = unificationEnv })
+
+mapThrowUnificationError
+  :: forall s m a
+   . IsExprLabel s
+  => MonadThrow DerivingError m
+  => ExceptT (UnificationError s) m a
+  -> m a
+mapThrowUnificationError =
+  mapThrow case _ of
+    UnificationError error -> { message: "Failed to unify " <> prettyExpr error.e1 <> " with " <> prettyExpr error.e2 <> " because: " <> error.reason }
+    FresheningUnificationError error -> { message: error.message }
+
+subFresheningT
+  :: forall s m a
+   . IsExprLabel s
+  => MonadState (DerivingEnv s) m
+  => MonadThrow DerivingError m
+  => FresheningT s (StateT (UnificationEnv s) (ExceptT (UnificationError s) m)) a
+  -> m a
+subFresheningT m =
+  m
+    # runFresheningT
+    # subUnificationState
+    # mapThrowUnificationError
+
 infix 1 makeDerivation as %
 
 makeDerivation
   :: forall m sort s d
    . MonadLogger m
   => MonadReader (DerivingCtx sort s d) m
-  => MonadState (DerivingEnv s d) m
+  => MonadState (DerivingEnv s) m
   => MonadError DerivingError m
   => IsExprLabel s
   => IsExprLabel d
@@ -243,26 +289,6 @@ makeDerivation d kidsM = do
   log_ ("makeDerivation: " <> stringify d)
 
   ctx <- ask
-
-  let
-    mapThrowUnificationError :: forall a. ExceptT (UnificationError s) m a -> m a
-    mapThrowUnificationError =
-      mapThrow case _ of
-        UnificationError error -> { message: "Failed to unify " <> prettyExpr error.e1 <> " with " <> prettyExpr error.e2 <> " because: " <> error.reason }
-        FresheningUnificationError error -> { message: error.message }
-
-    subUnificationState :: forall m' a. MonadState (DerivingEnv s d) m' => StateT (UnificationEnv s) m' a -> m' a
-    subUnificationState =
-      subStateT
-        _.unificationEnv
-        (\unificationEnv -> _ { unificationEnv = unificationEnv })
-
-    subFresheningT :: forall a. FresheningT s (StateT (UnificationEnv s) (ExceptT (UnificationError s) m)) a -> m a
-    subFresheningT m =
-      m
-        # runFresheningT
-        # subUnificationState
-        # mapThrowUnificationError
 
   let rule = ctx.derivationSystem.rules d
   hypotheses /\ conclusion <- subFresheningT do
@@ -285,7 +311,7 @@ makeDerivation d kidsM = do
               # mapThrow
                   ( case _ of
                       UnificationError error -> { message: "Expected the derivation " <> prettyExpr kid <> " to have a sequent that unified with " <> prettyExpr expectedKidSequent <> ", but failed to unify " <> prettyExpr error.e1 <> " with " <> prettyExpr error.e2 <> " because: " <> error.reason }
-                      FresheningUnificationError error -> { message: error.message }
+                      FresheningUnificationError error -> { message: "Expected the derivation " <> prettyExpr kid <> " to have a sequent that unified with " <> prettyExpr expectedKidSequent <> ", but encountered freshening error: " <> error.message }
                   )
       )
     -- # flip execStateT (newUnificationEnv {})

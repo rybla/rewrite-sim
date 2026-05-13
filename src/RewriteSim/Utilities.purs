@@ -4,9 +4,10 @@ import Prelude
 
 import Control.Bind (bindFlipped)
 import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.Except (ExceptT, runExceptT)
+import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Reader (class MonadReader, ReaderT, asks, runReaderT)
 import Control.Monad.State (class MonadState, StateT, gets, modify_, runStateT)
+import Data.Bifunctor (lmap)
 import Data.Either (either)
 import Data.Identity (Identity)
 import Data.Newtype (unwrap)
@@ -57,3 +58,7 @@ foreign import stringify :: forall a. a -> String
 
 mapThrow :: forall e1 e2 m a. MonadThrow e2 m => (e1 -> e2) -> ExceptT e1 m a -> m a
 mapThrow f m = m # runExceptT >>= either (f >>> throwError) pure
+
+mapThrow' :: forall e1 e2 m a. Monad m => (e1 -> e2) -> ExceptT e1 m a -> ExceptT e2 m a
+mapThrow' f m = m # runExceptT # map (lmap f) # ExceptT
+
