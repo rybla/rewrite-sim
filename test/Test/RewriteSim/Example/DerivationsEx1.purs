@@ -12,8 +12,8 @@ import Data.Tuple.Nested ((/\))
 import Effect.Aff (Aff)
 import Effect.Exception (Error)
 import RewriteSim (prettyExpr)
-import RewriteSim.Example.DerivationsEx1 (DerivationLabel, SequentLabel, SortLabel, app_, lam_, makeDerivationSystem, sequentSystem, suc_, var_, zero_)
-import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, newDerivingCtx, newDerivingEnv)
+import RewriteSim.Example.DerivationsEx1 (DerivationLabel(..), SequentLabel(..), SortLabel(..), app_, lam_, makeDerivationSystem, sequentSystem, suc_, var_, zero_)
+import RewriteSim.Example.Library.Derivations (DerivationSystem, DerivingCtx, DerivingEnv, DerivingError, DerivingT, newDerivingCtx, newDerivingEnv)
 import RewriteSim.Logging (LoggerT, log, log_)
 import RewriteSim.Utilities (runExceptThrow)
 import Test.RewriteSim.Common (LoggerSpecT, hoistLoggerSpec)
@@ -37,7 +37,7 @@ spec =
             runDerivingTest
               :: forall m a
                . MonadThrow Error m
-              => ReaderT (DerivingCtx SortLabel SequentLabel DerivationLabel) (StateT (DerivingEnv SequentLabel DerivationLabel) (ExceptT DerivingError m)) a
+              => DerivingT SortLabel SequentLabel DerivationLabel m a
               -> DerivationTestInput
               -> m a
             runDerivingTest m ctx = do

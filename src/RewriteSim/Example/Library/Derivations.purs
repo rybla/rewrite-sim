@@ -20,7 +20,7 @@ import Data.Traversable (sequence, traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Tuple.Nested (type (/\), (/\))
 import Foreign.Object as Object
-import RewriteSim (class IsExprLabel, AbsExpr, FresheningEnv, FresheningError, GenericExpr(..), MetaVar, UnificationEnv, UnificationError(..), FresheningT, freshenAbsExpr, newUnificationEnv, prettyExpr, runFresheningT, substAbsExpr, unify)
+import RewriteSim (class IsExprLabel, AbsExpr, FresheningT, GenericExpr(..), MetaVar, UnificationEnv, UnificationError(..), freshenAbsExpr, newUnificationEnv, prettyExpr, runFresheningT, substAbsExpr, unify)
 import RewriteSim.Logging (class MonadLogger, log, log_)
 import RewriteSim.Pretty (class Pretty, pretty)
 import RewriteSim.Utilities (mapThrow, stringify, subStateT)
@@ -45,7 +45,7 @@ type SequentSystem sort s =
   { rules :: s -> SequentRule sort
   }
 
-type SequentM sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
+type SequentT sort s m = ReaderT (SequentCtx sort s) (StateT (SequentEnv sort s) (ExceptT (SequentError s) m))
 
 type SequentEnv :: Type -> Type -> Type
 type SequentEnv sort s =
@@ -157,14 +157,14 @@ makeDerivationRule
   => MonadThrow (DerivationRuleError d) m
   => IsExprLabel d
   => d
-  -> Array (SequentM sort s m (Sequent s))
-  -> SequentM sort s m (Sequent s)
+  -> Array (SequentT sort s m (Sequent s))
+  -> SequentT sort s m (Sequent s)
   -> m (d /\ DerivationRule s)
 makeDerivationRule d hypothesesM conclusionM = log "makeDerivationRule" (pure { d: pretty d }) *> do
   ctx <- ask
   let
-    runSequentM :: forall a. SequentM sort s m a -> m a
-    runSequentM m = m
+    runSequentT :: forall a. SequentT sort s m a -> m a
+    runSequentT m = m
       # flip runReaderT
           ( newSequentCtx
               { sequentSystem: ctx.sequentSystem
@@ -177,7 +177,7 @@ makeDerivationRule d hypothesesM conclusionM = log "makeDerivationRule" (pure { 
               , message: error.message
               }
           )
-  hypotheses /\ conclusion <- runSequentM $ Tuple <$> sequence hypothesesM <*> conclusionM
+  hypotheses /\ conclusion <- runSequentT $ Tuple <$> sequence hypothesesM <*> conclusionM
   pure $ d /\ { hypotheses, conclusion }
 
 type DerivingT sort s d m = ReaderT (DerivingCtx sort s d) (StateT (DerivingEnv s d) (ExceptT DerivingError m))
