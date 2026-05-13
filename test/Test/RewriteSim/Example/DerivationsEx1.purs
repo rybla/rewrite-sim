@@ -66,6 +66,14 @@ spec =
                 (app (var (suc zero)) (var zero))
             )
 
+          makeDerivingTestWithExpectedConclusion "λ λ (vsz) vz"
+            (lam_ (lam_ (app_ (var_ (suc_ zero_)) (var_ zero_))))
+            ( typing
+                (mS "gamma")
+                (arr (arr (mS "alpha") (mS "beta")) (arr (mS "alpha") (mS "beta")))
+                (lam (lam (app (var (suc zero)) (var zero))))
+            )
+
           pure unit
 
         pure unit
