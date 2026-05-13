@@ -184,8 +184,7 @@ type DerivingT sort s d m = ReaderT (DerivingCtx sort s d) (StateT (DerivingEnv 
 
 type DerivingEnv :: Type -> Type -> Type
 type DerivingEnv s d =
-  { metaSub :: Map MetaVar (Sequent s)
-  , unificationEnv :: UnificationEnv s
+  { unificationEnv :: UnificationEnv s
   }
 
 newDerivingEnv
@@ -193,8 +192,7 @@ newDerivingEnv
    . {}
   -> DerivingEnv s d
 newDerivingEnv {} =
-  { metaSub: Map.empty
-  , unificationEnv: newUnificationEnv {}
+  { unificationEnv: newUnificationEnv {}
   }
 
 type DerivingCtx sort s d =
