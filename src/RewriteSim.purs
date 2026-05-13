@@ -199,6 +199,8 @@ renderExpr (Expr a es) = do
 -- unification
 --------------------------------------------------------------------------------
 
+-- TODO: refactor unification and freshening to use explicit monad transformers rather than type class constraints, so that I cna more easily nest them with different instances of State, for example
+
 type AbsExprSubst a = Map MetaVar (AbsExpr a)
 
 substAbsExprToExpr :: forall a. AbsExprSubst a -> AbsExpr a -> Expr a
